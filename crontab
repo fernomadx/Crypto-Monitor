@@ -1,0 +1,17 @@
+# crypto-monitor supercronic crontab
+# Formato: minuto hora dia mês diasemana comando
+
+# Hyperliquid: funding rates + posições (a cada 15 min)
+*/15 * * * * python /app/agents/hyperliquid.py
+
+# MEXC: carteira + BTC price (a cada 15 min)
+*/15 * * * * python /app/agents/mexc.py
+
+# News + Sentimento (a cada 10 min)
+*/10 * * * * python /app/agents/sentiment.py
+
+# Polymarket scanner (a cada 30 min)
+*/30 * * * * python /app/agents/polymarket.py
+
+# Consensus orchestrator (a cada 4h, na hora cheia)
+0 */4 * * * python /app/agents/orchestrator.py

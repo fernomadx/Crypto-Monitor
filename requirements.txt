@@ -1,0 +1,19 @@
+# Core
+requests==2.31.0
+httpx==0.27.0
+
+# News & Sentiment
+feedparser==6.0.11
+vaderSentiment==3.3.2
+anthropic==0.28.0
+
+# Scheduling (supercronic reads a crontab; this is the Python side)
+schedule==1.2.2
+
+# Crypto libs
+# (Hyperliquid via REST — no SDK needed)
+# (MEXC via REST + HMAC — no SDK needed)
+
+# Utilities
+python-dotenv==1.0.1
+pytz==2024.1
