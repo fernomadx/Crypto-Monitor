@@ -6,21 +6,21 @@ This is a Python 3.12 crypto monitoring bot that runs scheduled agents via super
 
 ### Running agents locally
 
-All agent scripts use `sys.path.insert(0, "/app")` (the Docker path). To run locally, set `PYTHONPATH=/workspace`:
-
 ```bash
-PYTHONPATH=/workspace python3 agents/hyperliquid.py
+python3 agents/hyperliquid.py
 ```
 
-### Required environment variables
+Agents auto-resolve the project root via `Path(__file__)`, so no `PYTHONPATH` override is needed.
 
-`lib/telegram.py` reads `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` via `os.environ["..."]` at **module import time**. Every agent imports this module, so these env vars must be set before running any agent — even with dummy values for local testing:
+### Environment variables
+
+Set `DB_PATH` to control the SQLite location (defaults to `/data/crypto_monitor.db`):
 
 ```bash
-export TELEGRAM_BOT_TOKEN="dummy"
-export TELEGRAM_CHAT_ID="12345"
 export DB_PATH="./data/crypto_monitor.db"
 ```
+
+`TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are optional for local dev — if missing, a warning is logged and Telegram alerts are silently skipped.
 
 ### Agents that work without API keys
 

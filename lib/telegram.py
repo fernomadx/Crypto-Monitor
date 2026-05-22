@@ -13,9 +13,12 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
-CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
+BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
+
+if not BOT_TOKEN or not CHAT_ID:
+    logger.warning("TELEGRAM_BOT_TOKEN ou TELEGRAM_CHAT_ID não configurados — alertas desativados")
 
 
 def send(text: str, parse_mode: str = "HTML") -> bool:

@@ -14,8 +14,9 @@ Nota: Polymarket não tem endpoint de arbitragem garantido — este agente
 
 import logging
 import sys
+from pathlib import Path
 
-sys.path.insert(0, "/app")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import requests
 
