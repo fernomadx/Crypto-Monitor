@@ -123,14 +123,14 @@ python /app/agents/orchestrator.py
 
 ## Backtest — EMA 20/50 + MACD
 
-Estratégia com crossover 20/50, dois retestes na zona das EMAs e **filtro MACD (12, 26, 9)** na entrada (long: MACD > signal; short: MACD < signal). Timeframes: 5m, 15m, 1h, 4h, 1d.
-
 ```bash
 pip install -r requirements.txt
-python3 backtest/run_backtest.py
-python3 backtest/run_backtest.py --compare   # com vs sem MACD
+python3 backtest/run_backtest.py --compare-macd   # todos os modos
+python3 backtest/run_backtest.py --macd-above-zero --macd-hist-rising
 python3 backtest/run_backtest.py --no-macd
 ```
+
+Modos MACD: `cross` (padrão), `+zero`, `+hist`, `full` (todos). Ver `--help`.
 
 ---
 

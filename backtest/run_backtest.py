@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 """
 Backtest EMA 20/50 crossover + double retest across multiple timeframes.
-MACD filters configurable on entry.
+Filtros de entrada: MACD ou RSI (sem usar os dois ao mesmo tempo).
 
 Usage:
-    python3 backtest/run_backtest.py
-    python3 backtest/run_backtest.py --macd-above-zero
-    python3 backtest/run_backtest.py --macd-hist-rising
-    python3 backtest/run_backtest.py --macd-above-zero --macd-hist-rising
+    python3 backtest/run_backtest.py --compare-rsi
+    python3 backtest/run_backtest.py --rsi
     python3 backtest/run_backtest.py --compare-macd
     python3 backtest/run_backtest.py --no-macd
 """
@@ -26,7 +24,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from backtest.data_fetcher import candles_for_timeframe, fetch_ohlcv
 from backtest.ema_retest_strategy import (
     MACD_PRESETS,
+    RSI_PRESETS,
+    EntryFilterConfig,
     MacdFilterConfig,
+    RsiFilterConfig,
     generate_signals,
     summarize_trades,
 )
@@ -36,7 +37,7 @@ DEFAULT_TIMEFRAMES = ["5m", "15m", "1h", "4h", "1d"]
 
 
 def build_macd_config(args: argparse.Namespace) -> MacdFilterConfig:
-    if args.no_macd:
+    if args.no_macd or args.rsi:
         return MacdFilterConfig(enabled=False)
 
     require_cross = not args.macd_above_zero_only
@@ -57,10 +58,40 @@ def build_macd_config(args: argparse.Namespace) -> MacdFilterConfig:
     )
 
 
+def build_rsi_config(args: argparse.Namespace) -> RsiFilterConfig:
+    if args.rsi_cross_50:
+        return RsiFilterConfig(
+            enabled=True,
+            require_above_50=False,
+            require_cross_50=True,
+        )
+    if args.rsi_not_extreme:
+        return RsiFilterConfig(
+            enabled=True,
+            require_above_50=True,
+            require_not_overbought=True,
+            require_not_oversold=True,
+        )
+    return RsiFilterConfig(
+        enabled=True,
+        require_above_50=True,
+        require_rising=args.rsi_rising,
+    )
+
+
+def build_entry_config(args: argparse.Namespace) -> EntryFilterConfig:
+    if args.rsi:
+        return EntryFilterConfig.rsi_only(build_rsi_config(args))
+    macd_cfg = build_macd_config(args)
+    if macd_cfg.enabled:
+        return EntryFilterConfig.macd_only(macd_cfg)
+    return EntryFilterConfig.none()
+
+
 def run_single(
     symbol: str,
     timeframe: str,
-    macd_cfg: MacdFilterConfig,
+    entry_cfg: EntryFilterConfig,
     df: pd.DataFrame | None = None,
 ) -> dict:
     if df is None:
@@ -68,7 +99,7 @@ def run_single(
         print(f"  Baixando {symbol} {timeframe} ({limit} candles)...", flush=True)
         df = fetch_ohlcv(symbol=symbol, timeframe=timeframe, limit=limit)
 
-    _, trades = generate_signals(df, macd_filter=macd_cfg)
+    _, trades = generate_signals(df, entry_filter=entry_cfg)
     stats = summarize_trades(trades)
     stats["timeframe"] = timeframe
     stats["symbol"] = symbol
@@ -77,7 +108,7 @@ def run_single(
     stats["period_end"] = str(df.index[-1])
     stats["exchange"] = df.attrs.get("exchange", "unknown")
     stats["pair"] = df.attrs.get("pair", symbol)
-    stats["macd_mode"] = macd_cfg.label
+    stats["filter_mode"] = entry_cfg.label
     return stats
 
 
@@ -116,14 +147,18 @@ def print_results_table(results: list[dict], title: str = "") -> None:
     print()
 
 
-def print_compare_macd_summary(all_results: dict[str, list[dict]]) -> None:
-    """Compact table: mode x timeframe return %."""
-    timeframes = [r["timeframe"] for r in all_results["cross"] if "error" not in r]
+def print_compare_summary(
+    all_results: dict[str, list[dict]],
+    title: str,
+    reference_mode: str,
+) -> None:
+    ref = all_results.get(reference_mode, [])
+    timeframes = [r["timeframe"] for r in ref if "error" not in r]
     modes = list(all_results.keys())
 
-    col_w = max(10, max(len(m) for m in modes))
+    col_w = max(12, max(len(m) for m in modes))
     header = "Modo".ljust(col_w) + " | " + " | ".join(tf.ljust(8) for tf in timeframes)
-    print(f"\n=== Retorno composto (%) por modo MACD ===\n")
+    print(f"\n=== {title} ===\n")
     print(header)
     print("-" * len(header))
 
@@ -135,6 +170,49 @@ def print_compare_macd_summary(all_results: dict[str, list[dict]]) -> None:
             cells.append(str(ret).ljust(8))
         print(mode.ljust(col_w) + " | " + " | ".join(cells))
     print()
+
+
+def run_compare_presets(
+    args: argparse.Namespace,
+    presets: dict[str, EntryFilterConfig],
+    label: str,
+    reference_mode: str,
+) -> dict[str, list[dict]]:
+    print(f"\n=== {label} — {args.symbol} ===\n")
+    all_results: dict[str, list[dict]] = {}
+    cached: dict[str, pd.DataFrame] = {}
+
+    for tf in args.timeframes:
+        try:
+            limit = candles_for_timeframe(tf)
+            print(f"  Baixando {args.symbol} {tf} ({limit} candles)...", flush=True)
+            cached[tf] = fetch_ohlcv(symbol=args.symbol, timeframe=tf, limit=limit)
+        except Exception as exc:
+            print(f"  ✗ {tf}: erro download — {exc}")
+            for mode in presets:
+                all_results.setdefault(mode, []).append(
+                    {"timeframe": tf, "error": str(exc)}
+                )
+
+    for mode_name, cfg in presets.items():
+        mode_results: list[dict] = []
+        for tf, df in cached.items():
+            mode_results.append(run_single(args.symbol, tf, cfg, df=df))
+        all_results[mode_name] = mode_results
+        r1h = next((r for r in mode_results if r["timeframe"] == "1h"), {})
+        print(
+            f"  [{mode_name}] 1h: {r1h.get('total_return_pct', '?')}% "
+            f"({r1h.get('total_trades', '?')} trades)"
+        )
+
+    for mode_name, mode_results in all_results.items():
+        print_results_table(
+            [r for r in mode_results if "error" not in r],
+            mode_name,
+        )
+
+    print_compare_summary(all_results, f"Retorno composto (%) — {label}", reference_mode)
+    return all_results
 
 
 def main() -> None:
@@ -151,67 +229,55 @@ def main() -> None:
         default="backtest/results.json",
         help="JSON output path",
     )
-    parser.add_argument("--no-macd", action="store_true", help="Desativa filtro MACD")
+    # MACD
+    parser.add_argument("--no-macd", action="store_true", help="Sem filtro MACD")
+    parser.add_argument("--macd-above-zero", action="store_true")
+    parser.add_argument("--macd-above-zero-only", action="store_true")
+    parser.add_argument("--macd-hist-rising", action="store_true")
+    parser.add_argument("--compare-macd", action="store_true")
+    # RSI
     parser.add_argument(
-        "--macd-above-zero",
+        "--rsi",
         action="store_true",
-        help="Long: MACD > 0 | Short: MACD < 0 (soma ao cross, se ativo)",
+        help="Usa filtro RSI (sem MACD). Padrão: RSI > 50 long / < 50 short",
     )
-    parser.add_argument(
-        "--macd-above-zero-only",
-        action="store_true",
-        help="Só MACD acima/abaixo de zero, sem exigir cross",
-    )
-    parser.add_argument(
-        "--macd-hist-rising",
-        action="store_true",
-        help="Long: histograma crescente | Short: decrescente",
-    )
+    parser.add_argument("--rsi-not-extreme", action="store_true", help="Long 50-70, short 30-50")
+    parser.add_argument("--rsi-cross-50", action="store_true", help="Cruzamento da linha 50")
+    parser.add_argument("--rsi-rising", action="store_true", help="RSI crescente/decrescente")
+    parser.add_argument("--compare-rsi", action="store_true", help="Compara todos modos RSI")
     parser.add_argument(
         "--compare",
         action="store_true",
-        help="Compara config atual vs sem MACD",
-    )
-    parser.add_argument(
-        "--compare-macd",
-        action="store_true",
-        help="Compara todos os modos MACD (sem, cross, cross+zero, cross+hist, full)",
+        help="Compara config atual vs sem filtro",
     )
     args = parser.parse_args()
 
+    if args.compare_macd and args.compare_rsi:
+        parser.error("Use apenas --compare-macd ou --compare-rsi por vez.")
+
+    if args.compare_rsi:
+        all_results = run_compare_presets(
+            args,
+            RSI_PRESETS,
+            "Comparação modos RSI (sem MACD)",
+            "sem_rsi",
+        )
+        out_path = Path(args.output)
+        if str(out_path) == "backtest/results.json":
+            out_path = Path("backtest/results_rsi.json")
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(all_results, f, indent=2, ensure_ascii=False)
+        print(f"Resultados salvos em {out_path}")
+        return
+
     if args.compare_macd:
-        print(f"\n=== Comparação modos MACD — {args.symbol} ===\n")
-        all_results: dict[str, list[dict]] = {}
-        cached: dict[str, pd.DataFrame] = {}
-
-        for tf in args.timeframes:
-            try:
-                limit = candles_for_timeframe(tf)
-                print(f"  Baixando {args.symbol} {tf} ({limit} candles)...", flush=True)
-                cached[tf] = fetch_ohlcv(symbol=args.symbol, timeframe=tf, limit=limit)
-            except Exception as exc:
-                print(f"  ✗ {tf}: erro download — {exc}")
-                for mode in MACD_PRESETS:
-                    all_results.setdefault(mode, []).append(
-                        {"timeframe": tf, "error": str(exc)}
-                    )
-
-        for mode_name, cfg in MACD_PRESETS.items():
-            mode_results: list[dict] = []
-            for tf, df in cached.items():
-                stats = run_single(args.symbol, tf, cfg, df=df)
-                mode_results.append(stats)
-            all_results[mode_name] = mode_results
-            print(f"  [{mode_name}] 1h: {next((r for r in mode_results if r['timeframe']=='1h'), {}).get('total_return_pct', '?')}%")
-
-        for mode_name, mode_results in all_results.items():
-            print_results_table(
-                [r for r in mode_results if "error" not in r],
-                f"MACD: {mode_name}",
-            )
-
-        print_compare_macd_summary(all_results)
-
+        all_results = run_compare_presets(
+            args,
+            MACD_PRESETS,
+            "Comparação modos MACD (sem RSI)",
+            "sem_macd",
+        )
         out_path = Path(args.output)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         with open(out_path, "w", encoding="utf-8") as f:
@@ -219,8 +285,19 @@ def main() -> None:
         print(f"Resultados salvos em {out_path}")
         return
 
-    macd_cfg = build_macd_config(args)
-    label = f"EMA 20/50 + 2 retestes | MACD: {macd_cfg.label}"
+    entry_cfg = build_entry_config(args)
+    if not args.rsi and not args.no_macd and not any(
+        [args.macd_above_zero, args.macd_above_zero_only, args.macd_hist_rising]
+    ):
+        # Comportamento legado: MACD cross ativo por padrão
+        entry_cfg = EntryFilterConfig.macd_only(
+            MacdFilterConfig(enabled=True, require_cross=True)
+        )
+
+    if args.rsi:
+        entry_cfg = EntryFilterConfig.rsi_only(build_rsi_config(args))
+
+    label = f"EMA 20/50 + 2 retestes | {entry_cfg.label}"
     print(f"\n=== Backtest {label} — {args.symbol} ===\n")
 
     results: list[dict] = []
@@ -232,7 +309,7 @@ def main() -> None:
             print(f"  Baixando {args.symbol} {tf} ({limit} candles)...", flush=True)
             df = fetch_ohlcv(symbol=args.symbol, timeframe=tf, limit=limit)
 
-            stats = run_single(args.symbol, tf, macd_cfg, df=df)
+            stats = run_single(args.symbol, tf, entry_cfg, df=df)
             results.append(stats)
             print(
                 f"  ✓ {tf}: {stats['total_trades']} trades, "
@@ -240,9 +317,7 @@ def main() -> None:
             )
 
             if args.compare:
-                base = run_single(
-                    args.symbol, tf, MacdFilterConfig(enabled=False), df=df
-                )
+                base = run_single(args.symbol, tf, EntryFilterConfig.none(), df=df)
                 baseline.append(base)
         except Exception as exc:
             print(f"  ✗ {tf}: erro — {exc}")
@@ -250,13 +325,13 @@ def main() -> None:
 
     print_results_table([r for r in results if "error" not in r], label)
     if args.compare and baseline:
-        print_results_table(baseline, "Baseline sem MACD")
+        print_results_table(baseline, "Baseline sem filtro")
 
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    payload: dict = {"mode": macd_cfg.label, "results": results}
+    payload: dict = {"mode": entry_cfg.label, "results": results}
     if args.compare:
-        payload["without_macd"] = baseline
+        payload["sem_filtro"] = baseline
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, ensure_ascii=False)
     print(f"Resultados salvos em {out_path}")

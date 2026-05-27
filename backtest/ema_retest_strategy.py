@@ -1,11 +1,11 @@
 """
 EMA 20/50 crossover + double retest strategy (long & short).
-Configurable MACD (12, 26, 9) filters on entry.
+Configurable MACD and/or RSI filters on entry (use one at a time).
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum, auto
 
 import numpy as np
@@ -14,6 +14,7 @@ import pandas as pd
 MACD_FAST = 12
 MACD_SLOW = 26
 MACD_SIGNAL = 9
+RSI_PERIOD = 14
 
 
 class Side(Enum):
@@ -28,8 +29,6 @@ class SetupPhase(Enum):
 
 @dataclass(frozen=True)
 class MacdFilterConfig:
-    """MACD entry filters (all enabled flags must pass)."""
-
     enabled: bool = True
     require_cross: bool = True
     require_above_zero: bool = False
@@ -38,7 +37,7 @@ class MacdFilterConfig:
     @property
     def label(self) -> str:
         if not self.enabled:
-            return "sem_macd"
+            return "off"
         parts = []
         if self.require_cross:
             parts.append("cross")
@@ -49,21 +48,114 @@ class MacdFilterConfig:
         return "+".join(parts) if parts else "macd"
 
 
-# Presets for --compare-macd
-MACD_PRESETS: dict[str, MacdFilterConfig] = {
-    "sem_macd": MacdFilterConfig(enabled=False),
-    "cross": MacdFilterConfig(enabled=True, require_cross=True),
-    "cross_zero": MacdFilterConfig(
-        enabled=True, require_cross=True, require_above_zero=True
+@dataclass(frozen=True)
+class RsiFilterConfig:
+    enabled: bool = True
+    period: int = RSI_PERIOD
+    require_above_50: bool = True
+    require_not_overbought: bool = False
+    require_not_oversold: bool = False
+    require_cross_50: bool = False
+    require_rising: bool = False
+
+    @property
+    def label(self) -> str:
+        if not self.enabled:
+            return "off"
+        parts = []
+        if self.require_cross_50:
+            parts.append("cross50")
+        elif self.require_above_50:
+            parts.append("above50")
+        if self.require_not_overbought:
+            parts.append("lt70")
+        if self.require_not_oversold:
+            parts.append("gt30")
+        if self.require_rising:
+            parts.append("rising")
+        return "+".join(parts) if parts else "rsi"
+
+
+@dataclass(frozen=True)
+class EntryFilterConfig:
+    macd: MacdFilterConfig = field(default_factory=lambda: MacdFilterConfig(enabled=False))
+    rsi: RsiFilterConfig = field(default_factory=lambda: RsiFilterConfig(enabled=False))
+
+    @property
+    def label(self) -> str:
+        if self.rsi.enabled:
+            return f"rsi_{self.rsi.label}"
+        if self.macd.enabled:
+            return f"macd_{self.macd.label}"
+        return "sem_filtro"
+
+    @staticmethod
+    def none() -> EntryFilterConfig:
+        return EntryFilterConfig()
+
+    @staticmethod
+    def macd_only(cfg: MacdFilterConfig) -> EntryFilterConfig:
+        return EntryFilterConfig(macd=cfg, rsi=RsiFilterConfig(enabled=False))
+
+    @staticmethod
+    def rsi_only(cfg: RsiFilterConfig) -> EntryFilterConfig:
+        return EntryFilterConfig(
+            macd=MacdFilterConfig(enabled=False),
+            rsi=cfg,
+        )
+
+
+MACD_PRESETS: dict[str, EntryFilterConfig] = {
+    "sem_macd": EntryFilterConfig.none(),
+    "cross": EntryFilterConfig.macd_only(
+        MacdFilterConfig(enabled=True, require_cross=True)
     ),
-    "cross_hist": MacdFilterConfig(
-        enabled=True, require_cross=True, require_hist_rising=True
+    "cross_zero": EntryFilterConfig.macd_only(
+        MacdFilterConfig(
+            enabled=True, require_cross=True, require_above_zero=True
+        )
     ),
-    "full": MacdFilterConfig(
-        enabled=True,
-        require_cross=True,
-        require_above_zero=True,
-        require_hist_rising=True,
+    "cross_hist": EntryFilterConfig.macd_only(
+        MacdFilterConfig(
+            enabled=True, require_cross=True, require_hist_rising=True
+        )
+    ),
+    "full": EntryFilterConfig.macd_only(
+        MacdFilterConfig(
+            enabled=True,
+            require_cross=True,
+            require_above_zero=True,
+            require_hist_rising=True,
+        )
+    ),
+}
+
+RSI_PRESETS: dict[str, EntryFilterConfig] = {
+    "sem_rsi": EntryFilterConfig.none(),
+    "above_50": EntryFilterConfig.rsi_only(
+        RsiFilterConfig(enabled=True, require_above_50=True)
+    ),
+    "not_extreme": EntryFilterConfig.rsi_only(
+        RsiFilterConfig(
+            enabled=True,
+            require_above_50=True,
+            require_not_overbought=True,
+            require_not_oversold=True,
+        )
+    ),
+    "cross_50": EntryFilterConfig.rsi_only(
+        RsiFilterConfig(
+            enabled=True,
+            require_above_50=False,
+            require_cross_50=True,
+        )
+    ),
+    "rising": EntryFilterConfig.rsi_only(
+        RsiFilterConfig(
+            enabled=True,
+            require_above_50=True,
+            require_rising=True,
+        )
     ),
 }
 
@@ -100,10 +192,21 @@ def compute_macd(
     return macd_line, signal_line, histogram
 
 
+def compute_rsi(close: pd.Series, period: int = RSI_PERIOD) -> pd.Series:
+    delta = close.diff()
+    gain = delta.where(delta > 0, 0.0)
+    loss = -delta.where(delta < 0, 0.0)
+    avg_gain = gain.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+    rs = avg_gain / avg_loss.replace(0, np.nan)
+    return 100 - (100 / (1 + rs))
+
+
 def compute_indicators(
     df: pd.DataFrame,
     ema_fast: int = 20,
     ema_slow: int = 50,
+    rsi_period: int = RSI_PERIOD,
 ) -> pd.DataFrame:
     out = df.copy()
     out["ema_fast"] = out["close"].ewm(span=ema_fast, adjust=False).mean()
@@ -112,6 +215,7 @@ def compute_indicators(
     out["macd"] = macd_line
     out["macd_signal"] = signal_line
     out["macd_hist"] = histogram
+    out["rsi"] = compute_rsi(out["close"], period=rsi_period)
     return out
 
 
@@ -145,17 +249,83 @@ def macd_allows_short(row: pd.Series, prev: pd.Series, cfg: MacdFilterConfig) ->
     return True
 
 
+def rsi_allows_long(row: pd.Series, prev: pd.Series, cfg: RsiFilterConfig) -> bool:
+    if not cfg.enabled:
+        return True
+    rsi = row["rsi"]
+    prev_rsi = prev["rsi"]
+    if np.isnan(rsi) or np.isnan(prev_rsi):
+        return False
+    if cfg.require_cross_50:
+        if not (prev_rsi <= 50 < rsi):
+            return False
+    elif cfg.require_above_50 and not (rsi > 50):
+        return False
+    if cfg.require_not_overbought and not (rsi < 70):
+        return False
+    if cfg.require_rising and not (rsi > prev_rsi):
+        return False
+    return True
+
+
+def rsi_allows_short(row: pd.Series, prev: pd.Series, cfg: RsiFilterConfig) -> bool:
+    if not cfg.enabled:
+        return True
+    rsi = row["rsi"]
+    prev_rsi = prev["rsi"]
+    if np.isnan(rsi) or np.isnan(prev_rsi):
+        return False
+    if cfg.require_cross_50:
+        if not (prev_rsi >= 50 > rsi):
+            return False
+    elif cfg.require_above_50 and not (rsi < 50):
+        return False
+    if cfg.require_not_oversold and not (rsi > 30):
+        return False
+    if cfg.require_rising and not (rsi < prev_rsi):
+        return False
+    return True
+
+
+def entry_allows_long(row: pd.Series, prev: pd.Series, entry: EntryFilterConfig) -> bool:
+    return macd_allows_long(row, prev, entry.macd) and rsi_allows_long(
+        row, prev, entry.rsi
+    )
+
+
+def entry_allows_short(row: pd.Series, prev: pd.Series, entry: EntryFilterConfig) -> bool:
+    return macd_allows_short(row, prev, entry.macd) and rsi_allows_short(
+        row, prev, entry.rsi
+    )
+
+
+def _resolve_entry_filter(
+    macd_filter: bool | MacdFilterConfig | None,
+    rsi_filter: RsiFilterConfig | None,
+    entry_filter: EntryFilterConfig | None,
+) -> EntryFilterConfig:
+    if entry_filter is not None:
+        return entry_filter
+    macd_cfg = MacdFilterConfig(enabled=False)
+    rsi_cfg = RsiFilterConfig(enabled=False)
+    if rsi_filter is not None:
+        rsi_cfg = rsi_filter
+    if macd_filter is not None:
+        if isinstance(macd_filter, bool):
+            macd_cfg = MacdFilterConfig(enabled=macd_filter, require_cross=True)
+        else:
+            macd_cfg = macd_filter
+    return EntryFilterConfig(macd=macd_cfg, rsi=rsi_cfg)
+
+
 def generate_signals(
     df: pd.DataFrame,
-    macd_filter: bool | MacdFilterConfig = True,
+    macd_filter: bool | MacdFilterConfig | None = None,
+    rsi_filter: RsiFilterConfig | None = None,
+    entry_filter: EntryFilterConfig | None = None,
 ) -> tuple[pd.DataFrame, list[Trade]]:
-    """Run strategy bar-by-bar; returns annotated frame and completed trades."""
-    if isinstance(macd_filter, bool):
-        cfg = MacdFilterConfig(enabled=macd_filter, require_cross=True)
-    else:
-        cfg = macd_filter
-
-    data = compute_indicators(df)
+    entry = _resolve_entry_filter(macd_filter, rsi_filter, entry_filter)
+    data = compute_indicators(df, rsi_period=entry.rsi.period)
     trades: list[Trade] = []
 
     long_phase = SetupPhase.IDLE
@@ -196,8 +366,8 @@ def generate_signals(
         )
 
         zone_lo, zone_hi = _zone_bounds(row)
-        macd_ok_long = macd_allows_long(row, prev, cfg)
-        macd_ok_short = macd_allows_short(row, prev, cfg)
+        entry_ok_long = entry_allows_long(row, prev, entry)
+        entry_ok_short = entry_allows_short(row, prev, entry)
 
         if position is not None:
             if position.side == Side.LONG:
@@ -275,7 +445,7 @@ def generate_signals(
             and row["close"] > row["ema_fast"]
             and row["ema_fast"] > row["ema_slow"]
             and bullish_trend
-            and macd_ok_long
+            and entry_ok_long
         ):
             position = Trade(Side.LONG, ts, float(row["close"]))
             entered_long = True
@@ -310,7 +480,7 @@ def generate_signals(
             and row["close"] < row["ema_fast"]
             and row["ema_fast"] < row["ema_slow"]
             and bearish_trend
-            and macd_ok_short
+            and entry_ok_short
             and position is None
         ):
             position = Trade(Side.SHORT, ts, float(row["close"]))
