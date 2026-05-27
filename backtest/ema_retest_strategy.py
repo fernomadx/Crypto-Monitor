@@ -1,12 +1,12 @@
 """
 EMA 20/50 crossover + double retest strategy (long & short).
+Optional MACD (12, 26, 9) filter on entry.
 
 Rules (long):
   1. Bullish trend: close above 20 and 50 EMA
   2. Confirmation: 20 EMA crosses above 50 EMA
   3. After crossover, price retests the zone between EMAs twice
-     (low enters zone, close stays >= 50 EMA, then close reclaims 20 EMA)
-  4. Enter long on confirmation after 2nd retest (close > 20 EMA)
+  4. Enter long after 2nd retest (close > 20 EMA) + MACD line > signal
   5. Stop: below 50 EMA (intrabar low breach)
   6. Exit: candle closes below 50 EMA
 """
@@ -18,6 +18,10 @@ from enum import Enum, auto
 
 import numpy as np
 import pandas as pd
+
+MACD_FAST = 12
+MACD_SLOW = 26
+MACD_SIGNAL = 9
 
 
 class Side(Enum):
@@ -48,10 +52,32 @@ class Trade:
         return (self.entry_price - self.exit_price) / self.entry_price * 100
 
 
-def compute_emas(df: pd.DataFrame, fast: int = 20, slow: int = 50) -> pd.DataFrame:
+def compute_macd(
+    close: pd.Series,
+    fast: int = MACD_FAST,
+    slow: int = MACD_SLOW,
+    signal: int = MACD_SIGNAL,
+) -> tuple[pd.Series, pd.Series, pd.Series]:
+    ema_fast = close.ewm(span=fast, adjust=False).mean()
+    ema_slow = close.ewm(span=slow, adjust=False).mean()
+    macd_line = ema_fast - ema_slow
+    signal_line = macd_line.ewm(span=signal, adjust=False).mean()
+    histogram = macd_line - signal_line
+    return macd_line, signal_line, histogram
+
+
+def compute_indicators(
+    df: pd.DataFrame,
+    ema_fast: int = 20,
+    ema_slow: int = 50,
+) -> pd.DataFrame:
     out = df.copy()
-    out["ema_fast"] = out["close"].ewm(span=fast, adjust=False).mean()
-    out["ema_slow"] = out["close"].ewm(span=slow, adjust=False).mean()
+    out["ema_fast"] = out["close"].ewm(span=ema_fast, adjust=False).mean()
+    out["ema_slow"] = out["close"].ewm(span=ema_slow, adjust=False).mean()
+    macd_line, signal_line, histogram = compute_macd(out["close"])
+    out["macd"] = macd_line
+    out["macd_signal"] = signal_line
+    out["macd_hist"] = histogram
     return out
 
 
@@ -61,9 +87,20 @@ def _zone_bounds(row: pd.Series) -> tuple[float, float]:
     return low_band, high_band
 
 
-def generate_signals(df: pd.DataFrame) -> tuple[pd.DataFrame, list[Trade]]:
+def _macd_bullish(row: pd.Series) -> bool:
+    return row["macd"] > row["macd_signal"]
+
+
+def _macd_bearish(row: pd.Series) -> bool:
+    return row["macd"] < row["macd_signal"]
+
+
+def generate_signals(
+    df: pd.DataFrame,
+    macd_filter: bool = True,
+) -> tuple[pd.DataFrame, list[Trade]]:
     """Run strategy bar-by-bar; returns annotated frame and completed trades."""
-    data = compute_emas(df)
+    data = compute_indicators(df)
     trades: list[Trade] = []
 
     long_phase = SetupPhase.IDLE
@@ -104,6 +141,8 @@ def generate_signals(df: pd.DataFrame) -> tuple[pd.DataFrame, list[Trade]]:
         )
 
         zone_lo, zone_hi = _zone_bounds(row)
+        macd_ok_long = _macd_bullish(row) if macd_filter else True
+        macd_ok_short = _macd_bearish(row) if macd_filter else True
 
         if position is not None:
             if position.side == Side.LONG:
@@ -143,7 +182,14 @@ def generate_signals(df: pd.DataFrame) -> tuple[pd.DataFrame, list[Trade]]:
                 else:
                     signals["exit"].append(False)
 
-            for key in ("long_crossover", "short_crossover", "long_retest", "short_retest", "entry_long", "entry_short"):
+            for key in (
+                "long_crossover",
+                "short_crossover",
+                "long_retest",
+                "short_retest",
+                "entry_long",
+                "entry_short",
+            ):
                 signals[key].append(False)
             continue
 
@@ -174,6 +220,7 @@ def generate_signals(df: pd.DataFrame) -> tuple[pd.DataFrame, list[Trade]]:
             and row["close"] > row["ema_fast"]
             and row["ema_fast"] > row["ema_slow"]
             and bullish_trend
+            and macd_ok_long
         ):
             position = Trade(Side.LONG, ts, float(row["close"]))
             entered_long = True
@@ -208,6 +255,7 @@ def generate_signals(df: pd.DataFrame) -> tuple[pd.DataFrame, list[Trade]]:
             and row["close"] < row["ema_fast"]
             and row["ema_fast"] < row["ema_slow"]
             and bearish_trend
+            and macd_ok_short
             and position is None
         ):
             position = Trade(Side.SHORT, ts, float(row["close"]))

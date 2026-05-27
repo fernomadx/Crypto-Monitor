@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """
 Backtest EMA 20/50 crossover + double retest across multiple timeframes.
+MACD (12, 26, 9) filter on entry by default.
 
 Usage:
-    python backtest/run_backtest.py
-    python backtest/run_backtest.py --symbol ETH/USDT --timeframes 1h 4h 1d
+    python3 backtest/run_backtest.py
+    python3 backtest/run_backtest.py --no-macd
+    python3 backtest/run_backtest.py --compare
 """
 
 from __future__ import annotations
@@ -23,11 +25,18 @@ from backtest.ema_retest_strategy import generate_signals, summarize_trades
 DEFAULT_TIMEFRAMES = ["5m", "15m", "1h", "4h", "1d"]
 
 
-def run_single(symbol: str, timeframe: str) -> dict:
+def run_single(
+    symbol: str,
+    timeframe: str,
+    macd_filter: bool,
+    df=None,
+) -> dict:
     limit = candles_for_timeframe(timeframe)
-    print(f"  Baixando {symbol} {timeframe} ({limit} candles)...", flush=True)
-    df = fetch_ohlcv(symbol=symbol, timeframe=timeframe, limit=limit)
-    _, trades = generate_signals(df)
+    if df is None:
+        print(f"  Baixando {symbol} {timeframe} ({limit} candles)...", flush=True)
+        df = fetch_ohlcv(symbol=symbol, timeframe=timeframe, limit=limit)
+
+    _, trades = generate_signals(df, macd_filter=macd_filter)
     stats = summarize_trades(trades)
     stats["timeframe"] = timeframe
     stats["symbol"] = symbol
@@ -36,10 +45,14 @@ def run_single(symbol: str, timeframe: str) -> dict:
     stats["period_end"] = str(df.index[-1])
     stats["exchange"] = df.attrs.get("exchange", "unknown")
     stats["pair"] = df.attrs.get("pair", symbol)
+    stats["macd_filter"] = macd_filter
     return stats
 
 
-def print_results_table(results: list[dict]) -> None:
+def print_results_table(results: list[dict], title: str = "") -> None:
+    if title:
+        print(f"\n--- {title} ---")
+
     headers = [
         ("TF", "timeframe"),
         ("Trades", "total_trades"),
@@ -85,29 +98,59 @@ def main() -> None:
         default="backtest/results.json",
         help="JSON output path",
     )
+    parser.add_argument(
+        "--no-macd",
+        action="store_true",
+        help="Desativa filtro MACD na entrada",
+    )
+    parser.add_argument(
+        "--compare",
+        action="store_true",
+        help="Roda com e sem MACD e exibe as duas tabelas",
+    )
     args = parser.parse_args()
 
-    print(f"\n=== Backtest EMA 20/50 + 2 Retestes — {args.symbol} ===\n")
+    macd_on = not args.no_macd
+    label = "EMA 20/50 + 2 retestes + MACD" if macd_on else "EMA 20/50 + 2 retestes (sem MACD)"
+    print(f"\n=== Backtest {label} — {args.symbol} ===\n")
 
     results: list[dict] = []
+    results_baseline: list[dict] = []
+    cached_dfs: dict[str, object] = {}
+
     for tf in args.timeframes:
         try:
-            stats = run_single(args.symbol, tf)
+            limit = candles_for_timeframe(tf)
+            print(f"  Baixando {args.symbol} {tf} ({limit} candles)...", flush=True)
+            df = fetch_ohlcv(symbol=args.symbol, timeframe=tf, limit=limit)
+            cached_dfs[tf] = df
+
+            stats = run_single(args.symbol, tf, macd_filter=macd_on, df=df)
             results.append(stats)
             print(
                 f"  ✓ {tf}: {stats['total_trades']} trades, "
                 f"retorno {stats['total_return_pct']}%, win {stats['win_rate_pct']}%"
             )
+
+            if args.compare:
+                base = run_single(args.symbol, tf, macd_filter=False, df=df)
+                results_baseline.append(base)
         except Exception as exc:
             print(f"  ✗ {tf}: erro — {exc}")
             results.append({"timeframe": tf, "error": str(exc)})
 
-    print_results_table([r for r in results if "error" not in r])
+    print_results_table([r for r in results if "error" not in r], label)
+
+    if args.compare and results_baseline:
+        print_results_table(results_baseline, "Baseline sem MACD")
 
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"with_macd": results}
+    if args.compare:
+        payload["without_macd"] = results_baseline
     with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(results, f, indent=2, ensure_ascii=False)
+        json.dump(payload, f, indent=2, ensure_ascii=False)
     print(f"Resultados salvos em {out_path}")
 
 

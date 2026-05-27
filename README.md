@@ -121,17 +121,18 @@ python /app/agents/orchestrator.py
 
 ---
 
-## Backtest — EMA 20/50 + 2 retestes
+## Backtest — EMA 20/50 + MACD
 
-Estratégia do fluxograma (crossover 20/50, dois retestes na zona das EMAs, SL abaixo da EMA 50, saída no fechamento abaixo da EMA 50). Dados via OKX/Kraken (ccxt).
+Estratégia com crossover 20/50, dois retestes na zona das EMAs e **filtro MACD (12, 26, 9)** na entrada (long: MACD > signal; short: MACD < signal). Timeframes: 5m, 15m, 1h, 4h, 1d.
 
 ```bash
 pip install -r requirements.txt
 python3 backtest/run_backtest.py
-python3 backtest/run_backtest.py --symbol ETH/USDT --timeframes 1h 4h 1d
+python3 backtest/run_backtest.py --compare   # com vs sem MACD
+python3 backtest/run_backtest.py --no-macd
 ```
 
-Resultados em `backtest/results.json` e tabela no terminal.
+---
 
 ## Desenvolvimento local
 
