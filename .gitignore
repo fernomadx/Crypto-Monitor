@@ -23,6 +23,9 @@ Thumbs.db
 *.log
 logs/
 
+# Backtest outputs
+backtest/results.json
+
 # IDE
 .vscode/
 .idea/

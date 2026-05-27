@@ -121,6 +121,18 @@ python /app/agents/orchestrator.py
 
 ---
 
+## Backtest — EMA 20/50 + 2 retestes
+
+Estratégia do fluxograma (crossover 20/50, dois retestes na zona das EMAs, SL abaixo da EMA 50, saída no fechamento abaixo da EMA 50). Dados via OKX/Kraken (ccxt).
+
+```bash
+pip install -r requirements.txt
+python3 backtest/run_backtest.py
+python3 backtest/run_backtest.py --symbol ETH/USDT --timeframes 1h 4h 1d
+```
+
+Resultados em `backtest/results.json` e tabela no terminal.
+
 ## Desenvolvimento local
 
 ```bash
