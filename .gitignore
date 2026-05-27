@@ -30,3 +30,5 @@ backtest/results.json
 .vscode/
 .idea/
 *.swp
+backtest/results.json
+backtest/results_rsi.json
