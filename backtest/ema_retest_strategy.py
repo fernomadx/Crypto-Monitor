@@ -1,14 +1,6 @@
 """
 EMA 20/50 crossover + double retest strategy (long & short).
-Optional MACD (12, 26, 9) filter on entry.
-
-Rules (long):
-  1. Bullish trend: close above 20 and 50 EMA
-  2. Confirmation: 20 EMA crosses above 50 EMA
-  3. After crossover, price retests the zone between EMAs twice
-  4. Enter long after 2nd retest (close > 20 EMA) + MACD line > signal
-  5. Stop: below 50 EMA (intrabar low breach)
-  6. Exit: candle closes below 50 EMA
+Configurable MACD (12, 26, 9) filters on entry.
 """
 
 from __future__ import annotations
@@ -32,6 +24,48 @@ class Side(Enum):
 class SetupPhase(Enum):
     IDLE = auto()
     WATCHING_RETESTS = auto()
+
+
+@dataclass(frozen=True)
+class MacdFilterConfig:
+    """MACD entry filters (all enabled flags must pass)."""
+
+    enabled: bool = True
+    require_cross: bool = True
+    require_above_zero: bool = False
+    require_hist_rising: bool = False
+
+    @property
+    def label(self) -> str:
+        if not self.enabled:
+            return "sem_macd"
+        parts = []
+        if self.require_cross:
+            parts.append("cross")
+        if self.require_above_zero:
+            parts.append("zero")
+        if self.require_hist_rising:
+            parts.append("hist")
+        return "+".join(parts) if parts else "macd"
+
+
+# Presets for --compare-macd
+MACD_PRESETS: dict[str, MacdFilterConfig] = {
+    "sem_macd": MacdFilterConfig(enabled=False),
+    "cross": MacdFilterConfig(enabled=True, require_cross=True),
+    "cross_zero": MacdFilterConfig(
+        enabled=True, require_cross=True, require_above_zero=True
+    ),
+    "cross_hist": MacdFilterConfig(
+        enabled=True, require_cross=True, require_hist_rising=True
+    ),
+    "full": MacdFilterConfig(
+        enabled=True,
+        require_cross=True,
+        require_above_zero=True,
+        require_hist_rising=True,
+    ),
+}
 
 
 @dataclass
@@ -87,19 +121,40 @@ def _zone_bounds(row: pd.Series) -> tuple[float, float]:
     return low_band, high_band
 
 
-def _macd_bullish(row: pd.Series) -> bool:
-    return row["macd"] > row["macd_signal"]
+def macd_allows_long(row: pd.Series, prev: pd.Series, cfg: MacdFilterConfig) -> bool:
+    if not cfg.enabled:
+        return True
+    if cfg.require_cross and not (row["macd"] > row["macd_signal"]):
+        return False
+    if cfg.require_above_zero and not (row["macd"] > 0):
+        return False
+    if cfg.require_hist_rising and not (row["macd_hist"] > prev["macd_hist"]):
+        return False
+    return True
 
 
-def _macd_bearish(row: pd.Series) -> bool:
-    return row["macd"] < row["macd_signal"]
+def macd_allows_short(row: pd.Series, prev: pd.Series, cfg: MacdFilterConfig) -> bool:
+    if not cfg.enabled:
+        return True
+    if cfg.require_cross and not (row["macd"] < row["macd_signal"]):
+        return False
+    if cfg.require_above_zero and not (row["macd"] < 0):
+        return False
+    if cfg.require_hist_rising and not (row["macd_hist"] < prev["macd_hist"]):
+        return False
+    return True
 
 
 def generate_signals(
     df: pd.DataFrame,
-    macd_filter: bool = True,
+    macd_filter: bool | MacdFilterConfig = True,
 ) -> tuple[pd.DataFrame, list[Trade]]:
     """Run strategy bar-by-bar; returns annotated frame and completed trades."""
+    if isinstance(macd_filter, bool):
+        cfg = MacdFilterConfig(enabled=macd_filter, require_cross=True)
+    else:
+        cfg = macd_filter
+
     data = compute_indicators(df)
     trades: list[Trade] = []
 
@@ -141,8 +196,8 @@ def generate_signals(
         )
 
         zone_lo, zone_hi = _zone_bounds(row)
-        macd_ok_long = _macd_bullish(row) if macd_filter else True
-        macd_ok_short = _macd_bearish(row) if macd_filter else True
+        macd_ok_long = macd_allows_long(row, prev, cfg)
+        macd_ok_short = macd_allows_short(row, prev, cfg)
 
         if position is not None:
             if position.side == Side.LONG:
