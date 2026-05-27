@@ -25,6 +25,8 @@ class EquitySummary:
     initial_capital: float
     final_capital: float
     leverage: int
+    fixed_margin_usdc: float | None
+    trades_skipped: int
     total_return_pct: float
     total_return_usd: float
     max_drawdown_pct: float
@@ -42,10 +44,11 @@ def simulate_equity(
     initial_capital: float = 1000.0,
     leverage: int = 20,
     fee_rate: float = 0.0005,
+    fixed_margin_usdc: float | None = None,
 ) -> EquitySummary:
     """
-    Cada trade usa margem = equity atual; notional = equity * leverage.
-    fee_rate: taxa por lado (entrada + saída = 2x na abertura/fechamento).
+    Modo A (padrão): margem = equity; notional = equity * leverage.
+    Modo B (fixed_margin_usdc): margem fixa por trade (ex. 100 USDC).
     """
     equity = initial_capital
     peak = equity
@@ -54,6 +57,7 @@ def simulate_equity(
     results: list[EquityTradeResult] = []
     curve_rows: list[dict] = []
     liquidated = False
+    skipped = 0
 
     wins = 0
 
@@ -65,7 +69,14 @@ def simulate_equity(
             break
 
         equity_before = equity
-        notional = equity * leverage
+        if fixed_margin_usdc is not None:
+            if equity_before < fixed_margin_usdc:
+                skipped += 1
+                continue
+            margin = fixed_margin_usdc
+        else:
+            margin = equity_before
+        notional = margin * leverage
         fee_usd = notional * fee_rate * 2
         pnl_usd = notional * (trade.pnl_pct / 100) - fee_usd
         equity_after = max(0.0, equity + pnl_usd)
@@ -117,6 +128,8 @@ def simulate_equity(
         initial_capital=initial_capital,
         final_capital=equity,
         leverage=leverage,
+        fixed_margin_usdc=fixed_margin_usdc,
+        trades_skipped=skipped,
         total_return_pct=((equity - initial_capital) / initial_capital * 100)
         if initial_capital > 0
         else 0.0,

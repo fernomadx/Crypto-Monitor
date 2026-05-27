@@ -33,7 +33,13 @@ def print_report(summary, symbol: str, timeframe: str, start: str, end: str) -> 
     print(f"Período:      {start} → {end}")
     print(f"Capital:      {summary.initial_capital:,.2f} USDC")
     print(f"Alavancagem:  {summary.leverage}x")
-    print(f"Notional/trade: equity × {summary.leverage}")
+    if summary.fixed_margin_usdc:
+        print(f"Margem/trade:  {summary.fixed_margin_usdc:,.2f} USDC (fixo)")
+        print(f"Notional/trade: {summary.fixed_margin_usdc * summary.leverage:,.2f} USDC")
+        if summary.trades_skipped:
+            print(f"Trades ignorados (sem margem): {summary.trades_skipped}")
+    else:
+        print(f"Notional/trade: equity × {summary.leverage}")
     print(f"{'=' * 60}\n")
 
     print("--- RESUMO TOTAL ---")
@@ -94,6 +100,12 @@ def main() -> None:
     parser.add_argument("--end", default=None, help="YYYY-MM-DD (padrão: hoje UTC)")
     parser.add_argument("--capital", type=float, default=1000.0)
     parser.add_argument("--leverage", type=int, default=20)
+    parser.add_argument(
+        "--position-usdc",
+        type=float,
+        default=None,
+        help="Margem fixa por trade em USDC (ex: 100)",
+    )
     parser.add_argument("--fee", type=float, default=0.0005, help="Taxa por lado (0.05%%)")
     parser.add_argument(
         "--output",
@@ -123,6 +135,7 @@ def main() -> None:
         initial_capital=args.capital,
         leverage=args.leverage,
         fee_rate=args.fee,
+        fixed_margin_usdc=args.position_usdc,
     )
 
     print_report(summary, args.symbol, args.timeframe, args.start, end_str)
@@ -136,6 +149,7 @@ def main() -> None:
         "end": end_str,
         "capital": args.capital,
         "leverage": args.leverage,
+            "position_usdc": args.position_usdc,
         "candles": len(df),
         "exchange": df.attrs.get("exchange"),
         "summary": {
