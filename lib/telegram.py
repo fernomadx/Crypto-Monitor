@@ -58,3 +58,33 @@ def send_kronos_alert(title: str, body: str) -> bool:
     """
     text = f"📈 <b>[KRONOS]</b> {title}\n\n{body}\n\n<i>Sinal informativo — não é ordem de trade.</i>"
     return send(text)
+
+
+def send_photo(path: str, caption: str = "", parse_mode: str = "HTML") -> bool:
+    """Envia imagem ao chat (PNG/JPG). Caption até 1024 caracteres."""
+    try:
+        caption = caption[:1024]
+        with open(path, "rb") as photo_file:
+            resp = requests.post(
+                f"{BASE_URL}/sendPhoto",
+                data={
+                    "chat_id": CHAT_ID,
+                    "caption": caption,
+                    "parse_mode": parse_mode,
+                },
+                files={"photo": photo_file},
+                timeout=60,
+            )
+        if not resp.ok:
+            logger.error("Telegram photo error %s: %s", resp.status_code, resp.text[:200])
+            return False
+        return True
+    except Exception as exc:
+        logger.error("Telegram send_photo failed: %s", exc)
+        return False
+
+
+def send_kronos_photo(path: str, caption: str) -> bool:
+    """Gráfico Kronos com prefixo [KRONOS] na legenda da foto."""
+    text = f"📈 [KRONOS] {caption}"
+    return send_photo(path, caption=text, parse_mode=None)

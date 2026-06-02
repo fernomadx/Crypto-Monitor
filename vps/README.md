@@ -5,24 +5,15 @@ Roda **na VPS** (ex.: BTCCURSOR), separado do **Railway** (`crypto-monitor`).
 - **Mesmo bot** Telegram (`TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID`)
 - **Alerta visual separado**: prefixo `📈 [KRONOS]` (não mistura com funding, MEXC, consensus)
 
-## Exemplo de mensagem no Telegram
+## Exemplo no Telegram (cada execução do cron)
 
-```
-📈 [KRONOS] Sinal 15m — 2026-06-02 16:00 UTC
+1. **Texto** — resumo em **1H**, **4H** e **Diário** (BTC, ETH, SOL)
+2. **3 fotos** — um gráfico por timeframe:
+   - candles **verde/vermelho** = histórico real (MEXC)
+   - candles **azul/laranja** = trilha **prevista** pelo Kronos
+   - linha amarela tracejada = separação “agora → futuro”
 
-Intervalo: 15m | Lookback: 400 | Horizonte: 12 barras
-Modelo: NeoQuasar/Kronos-mini
-
-BTC 🟢 BULLISH
-  Agora: $97,500.00
-  Previsto (fim do horizonte): $98,200.00 (+0.72%)
-
-ETH ...
-
-Sinal informativo — não é ordem de trade.
-```
-
-No app Telegram você pode **silenciar** ou **fixar** por palavra-chave `KRONOS` se quiser filtrar.
+No app Telegram você pode filtrar por `KRONOS`.
 
 ## Setup rápido (VPS)
 

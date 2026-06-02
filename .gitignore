@@ -14,6 +14,7 @@ __pycache__/
 .venv/
 venv/
 vps/.venv/
+vps/charts/*.png
 .python-version
 
 # OS
