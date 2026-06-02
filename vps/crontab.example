@@ -1,0 +1,8 @@
+# Crontab na VPS BTCCURSOR — alerta Kronos separado do Railway
+# crontab -e  e cole (ajuste caminhos):
+
+# A cada 4 horas — sinal Kronos
+0 */4 * * * set -a && . /opt/crypto-monitor/vps/.env && set +a && cd /opt/crypto-monitor && /opt/crypto-monitor/vps/.venv/bin/python vps/kronos_signal.py >> /var/log/kronos_signal.log 2>&1
+
+# Opcional: 1x por dia às 08:00 UTC
+# 0 8 * * * set -a && . /opt/crypto-monitor/vps/.env && set +a && cd /opt/crypto-monitor && /opt/crypto-monitor/vps/.venv/bin/python vps/kronos_signal.py >> /var/log/kronos_signal.log 2>&1

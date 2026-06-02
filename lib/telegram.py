@@ -48,3 +48,13 @@ def send_alert(title: str, body: str, emoji: str = "🔔") -> bool:
     """Formata alerta com título em negrito e corpo."""
     text = f"{emoji} <b>{title}</b>\n{body}"
     return send(text)
+
+
+def send_kronos_alert(title: str, body: str) -> bool:
+    """
+    Alerta do módulo Kronos (VPS) — visualmente separado do crypto-monitor.
+
+    Prefixo fixo [KRONOS] para filtrar no Telegram sem misturar com funding/sentiment.
+    """
+    text = f"📈 <b>[KRONOS]</b> {title}\n\n{body}\n\n<i>Sinal informativo — não é ordem de trade.</i>"
+    return send(text)

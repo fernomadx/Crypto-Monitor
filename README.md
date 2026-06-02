@@ -134,6 +134,18 @@ O `docker-compose.yml` monta `./data` em `/data` para persistência local.
 
 ---
 
+## Kronos na VPS (alerta separado no Telegram)
+
+O **Railway** continua leve (sem PyTorch). Na **VPS** (ex.: BTCCURSOR) rode o sinal Kronos e envie ao **mesmo bot**, com prefixo `📈 [KRONOS]`:
+
+```bash
+cd /opt/crypto-monitor
+cp vps/.env.example vps/.env   # mesmo TELEGRAM_BOT_TOKEN / CHAT_ID
+vps/.venv/bin/python vps/kronos_signal.py
+```
+
+Guia completo: [`vps/README.md`](vps/README.md)
+
 ## Estrutura de arquivos
 
 ```
@@ -151,9 +163,13 @@ crypto-monitor/
 │   ├── polymarket.py        # scanner mercados (30 min)
 │   ├── sentiment.py         # news + VADER + Haiku (10 min)
 │   └── orchestrator.py      # síntese consensus (4h)
+├── vps/
+│   ├── kronos_signal.py     # Kronos → Telegram [KRONOS] (rodar na VPS)
+│   ├── README.md
+│   └── setup_btccursor.sh
 └── lib/
     ├── db.py                # SQLite helper
-    ├── telegram.py          # Telegram sender
+    ├── telegram.py          # Telegram sender (+ send_kronos_alert)
     └── news_sources.py      # RSS + CryptoPanic + NewsAPI
 ```
 
