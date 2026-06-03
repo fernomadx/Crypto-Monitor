@@ -150,9 +150,15 @@ O **`Dockerfile` principal** já inclui Kronos. Após cada deploy:
 
 Serviço separado (`Dockerfile.kronos`) só se quiser isolar o custo/RAM.
 
-### Opção B — VPS
+### Opção B — VPS BTCCURSOR (bot Telegram **separado**)
 
-[`vps/README.md`](vps/README.md) + `sudo bash vps/install.sh`
+Guia: [`vps/BTCCURSOR.md`](vps/BTCCURSOR.md) — crie um bot em @BotFather (`KRONOS_TELEGRAM_*`).
+
+```bash
+sudo bash vps/install.sh
+```
+
+[`vps/README.md`](vps/README.md) · DB próprio na VPS (`kronos_vps.db`)
 
 ## Estrutura de arquivos
 

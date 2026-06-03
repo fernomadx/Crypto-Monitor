@@ -4,7 +4,7 @@
 # Ou, com repo local:
 #   sudo REPO_DIR=/opt/crypto-monitor bash vps/install.sh
 #
-# Requer: vps/.env com TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID (mesmo do Railway)
+# Requer: vps/.env com KRONOS_TELEGRAM_BOT_TOKEN + KRONOS_TELEGRAM_CHAT_ID (bot dedicado BTCCURSOR)
 
 set -euo pipefail
 
@@ -46,7 +46,7 @@ python3 -m venv "$REPO_DIR/vps/.venv"
 "$REPO_DIR/vps/.venv/bin/pip" install --upgrade pip wheel
 "$REPO_DIR/vps/.venv/bin/pip" install -r "$REPO_DIR/vps/requirements.txt"
 
-mkdir -p "$REPO_DIR/vps/charts"
+mkdir -p "$REPO_DIR/vps/charts" "$REPO_DIR/data"
 touch "$LOG_FILE" 2>/dev/null || LOG_FILE="$REPO_DIR/vps/kronos_signal.log"
 
 if [ ! -f "$REPO_DIR/vps/.env" ]; then
@@ -54,11 +54,16 @@ if [ ! -f "$REPO_DIR/vps/.env" ]; then
     cp "$REPO_DIR/vps/.env.example" "$REPO_DIR/vps/.env"
   fi
   echo ""
-  echo "ERRO: Configure $REPO_DIR/vps/.env antes de continuar:"
-  echo "  TELEGRAM_BOT_TOKEN=..."
-  echo "  TELEGRAM_CHAT_ID=..."
+  echo "ERRO: Configure $REPO_DIR/vps/.env antes de continuar (vps/BTCCURSOR.md):"
+  echo "  KRONOS_TELEGRAM_BOT_TOKEN=..."
+  echo "  KRONOS_TELEGRAM_CHAT_ID=..."
+  echo "  DB_PATH=$REPO_DIR/data/kronos_vps.db"
   echo "  KRONOS_PATH=$KRONOS_DIR"
   exit 1
+fi
+
+if ! grep -qE '^KRONOS_TELEGRAM_BOT_TOKEN=.+' "$REPO_DIR/vps/.env" 2>/dev/null; then
+  echo "AVISO: KRONOS_TELEGRAM_BOT_TOKEN ausente — usará TELEGRAM_* (mesmo bot do Railway)."
 fi
 
 # Garante KRONOS_PATH no .env
