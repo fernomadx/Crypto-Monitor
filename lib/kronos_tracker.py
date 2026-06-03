@@ -1,7 +1,7 @@
 """
 Catálogo e scorecard das previsões Kronos (SQLite /data).
 
-Simulação: capital 1000 USDC, margem 100 USDC × alavancagem (padrão 20x),
+Simulação: capital 1000 USDC, margem 100 USDC × alavancagem (padrão 10x),
 ordens LIMITE na MEXC com taxas sobre nocional (maker/taker).
 """
 
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 NEUTRAL_THRESHOLD_PCT = 0.15
 INITIAL_CAPITAL_USDC = float(os.environ.get("KRONOS_INITIAL_CAPITAL", "1000"))
 MARGIN_USDC = float(os.environ.get("KRONOS_POSITION_USDC", "100"))
-LEVERAGE = max(1.0, float(os.environ.get("KRONOS_LEVERAGE", "20")))
+LEVERAGE = max(1.0, float(os.environ.get("KRONOS_LEVERAGE", "10")))
 POSITION_USDC = MARGIN_USDC  # alias: margem por entrada
 PNL_FLAT_THRESHOLD_USDC = float(os.environ.get("KRONOS_FLAT_THRESHOLD_USDC", "0.05"))
 
@@ -804,7 +804,7 @@ def format_scorecard_telegram(new_trades: list[dict] | None = None) -> str:
         "<b>📊 Scorecard Kronos — simulação</b>",
         f"Capital <b>${INITIAL_CAPITAL_USDC:.0f}</b> · "
         f"margem <b>${MARGIN_USDC:.0f}</b> · <b>{LEVERAGE:.0f}x</b> "
-        f"(nocional ${notional_usdc():.0f}/trade) · limite",
+        f"(nocional ${notional_usdc():.0f}/trade) · só <b>{os.environ.get('KRONOS_SCORE_INTERVAL', '4h').upper()}</b> alinhado",
         f"Taxas MEXC sobre nocional: maker {FEE_MAKER_PCT}% · taker {FEE_TAKER_PCT}%",
         "",
     ]
@@ -829,15 +829,19 @@ def format_scorecard_telegram(new_trades: list[dict] | None = None) -> str:
 
 
 def format_scorecard_brief(days: int = 7) -> str:
+    from lib.kronos_alignment import SCORE_INTERVAL
+
     s = _aggregate_stats(days)
     if s.get("count", 0) == 0:
         return (
-            f"📊 <i>Scorecard {days}d: {s.get('pending_short', 0)} previsões aguardando fechar</i>"
+            f"📊 <i>Scorecard {days}d ({SCORE_INTERVAL.upper()} operável): "
+            f"{s.get('pending_short', 0)} aguardando fechar</i>"
         )
     nf = s.get("no_fill", 0)
     nf_txt = f" · {nf} sem fill" if nf else ""
     return (
-        f"📊 <b>{days}d</b> {s['count']} trades ${s['position_usdc']:.0f}×{s.get('leverage', LEVERAGE):.0f}x{nf_txt}: "
+        f"📊 <b>{days}d</b> {SCORE_INTERVAL.upper()} {s['count']} trades "
+        f"${s['position_usdc']:.0f}×{s.get('leverage', LEVERAGE):.0f}x{nf_txt}: "
         f"<b>{s['win_rate_pnl_pct']}%</b> gain "
         f"({s['gains']}✅/{s['losses']}❌) · "
         f"PnL <b>${s['total_pnl_usdc']:+.2f}</b> "

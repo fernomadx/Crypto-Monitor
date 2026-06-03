@@ -31,6 +31,12 @@ sys.path.insert(0, str(REPO_ROOT))
 KRONOS_ROOT = Path(os.environ.get("KRONOS_PATH", REPO_ROOT / "Kronos"))
 sys.path.insert(0, str(KRONOS_ROOT))
 
+from lib.kronos_alignment import (  # noqa: E402
+    collect_biases_by_ticker,
+    format_alignment_report,
+    should_log_to_scorecard,
+    tradeable_for_interval,
+)
 from lib.kronos_levels import compute_trade_levels  # noqa: E402
 from lib.kronos_tracker import format_scorecard_brief, log_predictions, new_run_id  # noqa: E402
 from lib.mexc_klines import INTERVAL_DELTAS, MEXC_KLINES_MAX_LIMIT, fetch_klines  # noqa: E402
@@ -358,8 +364,13 @@ def format_timeframe_summary(tf_label: str, results: list[dict], analysis_time: 
         sp = r.get("stop_pct", 0.0)
         rr = r.get("trade_rr", 0.0)
         candle = _fmt_ts(r["candle_time"])
+        trade_badge = ""
+        if r.get("tradeable"):
+            trade_badge = " · ✅ <i>operável</i>"
+        elif r.get("align_note"):
+            trade_badge = f" · ⚠️ <i>{r['align_note']}</i>"
         lines.append(
-            f"{r['icon']} <b>{r['ticker']}</b> — {r['bias']}{corr_txt}\n"
+            f"{r['icon']} <b>{r['ticker']}</b> — {r['bias']}{corr_txt}{trade_badge}\n"
             f"  📍 <b>Preço base:</b> {now_p}\n"
             f"     <i>último candle MEXC: {candle}</i>\n"
             f"  🎯 <b>Alvo</b> ({target_bars} barras): {tgt} ({'+' if tp >= 0 else ''}{tp:.2f}%)\n"
@@ -413,6 +424,7 @@ def run() -> None:
     run_id = new_run_id()
     summary_sections: list[str] = []
     all_errors: list[str] = []
+    results_by_interval: dict[str, list[dict]] = {}
 
     for tf in timeframes:
         results: list[dict] = []
@@ -427,23 +439,40 @@ def run() -> None:
                 tf_errors.append(f"{symbol}@{tf.interval}: {exc}")
 
         if results:
+            results_by_interval[tf.interval] = results
+        all_errors.extend(tf_errors)
+
+    biases_by_ticker = collect_biases_by_ticker(results_by_interval)
+    for interval, results in results_by_interval.items():
+        for r in results:
+            ok, note = tradeable_for_interval(r["ticker"], interval, biases_by_ticker[r["ticker"]])
+            r["tradeable"] = ok
+            r["align_note"] = note
+
+    for tf in timeframes:
+        results = results_by_interval.get(tf.interval, [])
+        tf_errors: list[str] = []
+        if not results:
+            continue
+
+        to_log = [r for r in results if should_log_to_scorecard(tf.interval, r.get("tradeable", False))]
+        if to_log:
             log_predictions(
                 run_id, now, tf.label, tf.interval,
-                results[0]["short_bars"], results[0]["pred_len"], results,
+                to_log[0]["short_bars"], to_log[0]["pred_len"], to_log,
             )
-            summary_sections.append(format_timeframe_summary(tf.label, results, now))
-            chart_path = CHART_DIR / f"kronos_{tf.interval}_{stamp}.png"
-            try:
-                render_timeframe_chart(results, tf.label, chart_path)
-                send_kronos_photo(
-                    str(chart_path),
-                    f"Gráfico {tf.label} — {now.strftime('%Y-%m-%d %H:%M UTC')}",
-                )
-            except Exception as exc:
-                logger.exception("Gráfico %s falhou: %s", tf.label, exc)
-                tf_errors.append(f"gráfico {tf.label}: {exc}")
-
-        all_errors.extend(tf_errors)
+            logger.info("Catálogo %s: %d/%d operáveis", tf.interval, len(to_log), len(results))
+        summary_sections.append(format_timeframe_summary(tf.label, results, now))
+        chart_path = CHART_DIR / f"kronos_{tf.interval}_{stamp}.png"
+        try:
+            render_timeframe_chart(results, tf.label, chart_path)
+            send_kronos_photo(
+                str(chart_path),
+                f"Gráfico {tf.label} — {now.strftime('%Y-%m-%d %H:%M UTC')}",
+            )
+        except Exception as exc:
+            logger.exception("Gráfico %s falhou: %s", tf.label, exc)
+            all_errors.append(f"gráfico {tf.label}: {exc}")
 
     if not summary_sections:
         send_kronos_alert("Erro — sem previsões", "\n".join(all_errors) or "Falha desconhecida")
@@ -460,8 +489,13 @@ def run() -> None:
     if all_errors:
         body += "\n\n⚠️ Erros:\n" + "\n".join(all_errors[:10])
 
+    if biases_by_ticker:
+        body += "\n\n" + format_alignment_report(biases_by_ticker)
     body += f"\n\n{format_scorecard_brief(7)}"
-    body += f"\n<i>Run ID: {run_id} — catalogado em /data/crypto_monitor.db</i>"
+    body += (
+        f"\n<i>Run ID: {run_id} — scorecard: {os.environ.get('KRONOS_SCORE_INTERVAL', '4h').upper()} "
+        f"operável · sim {os.environ.get('KRONOS_LEVERAGE', '10')}x</i>"
+    )
 
     send_kronos_alert(title, body)
     logger.info("Relatório [KRONOS] enviado (%d timeframes)", len(summary_sections))
