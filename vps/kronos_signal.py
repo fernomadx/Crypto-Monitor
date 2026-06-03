@@ -423,8 +423,8 @@ def run() -> None:
     title = f"Previsão — {now.strftime('%d/%m/%Y %H:%M UTC')}"
     body = format_full_report(summary_sections)
     body = (
-        f"📍 <b>Referência:</b> preço base = último candle fechado na MEXC no momento da inferência.\n"
-        f"🎯 <b>Alvo:</b> close previsto pelo modelo no fim de cada horizonte.\n\n"
+        f"📍 <b>Referência:</b> preço base = último candle fechado na MEXC (ordem limite de entrada simulada).\n"
+        f"🎯 <b>Alvo:</b> close previsto no horizonte curto (ordem limite de saída no scorecard).\n\n"
         + body
     )
     if all_errors:

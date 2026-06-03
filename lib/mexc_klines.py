@@ -93,3 +93,72 @@ def bars_to_timedelta(interval: str, bars: int) -> timedelta:
     if not delta:
         raise ValueError(f"Intervalo inválido: {interval}")
     return delta * bars
+
+
+def _ts_utc(ts: pd.Timestamp) -> pd.Timestamp:
+    t = pd.Timestamp(ts)
+    if t.tzinfo is None:
+        return t.tz_localize("UTC")
+    return t.tz_convert("UTC")
+
+
+def fetch_klines_range(
+    symbol: str,
+    interval: str,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+) -> pd.DataFrame:
+    """Candles entre start e end (UTC)."""
+    api_interval = mexc_interval(interval)
+    start_ts = _ts_utc(start)
+    end_ts = _ts_utc(end)
+    start_ms = int(start_ts.timestamp() * 1000)
+    end_ms = int(end_ts.timestamp() * 1000)
+    resp = requests.get(
+        f"{MEXC_BASE}/api/v3/klines",
+        params={
+            "symbol": symbol,
+            "interval": api_interval,
+            "startTime": start_ms,
+            "endTime": end_ms,
+            "limit": MEXC_KLINES_MAX_LIMIT,
+        },
+        timeout=30,
+    )
+    resp.raise_for_status()
+    rows = resp.json()
+    if not rows:
+        return pd.DataFrame()
+    df = pd.DataFrame(
+        rows,
+        columns=[
+            "open_time", "open", "high", "low", "close", "volume",
+            "close_time", "quote_volume",
+        ],
+    )
+    df["timestamps"] = pd.to_datetime(df["open_time"], unit="ms", utc=True)
+    for col in ("open", "high", "low", "close", "volume"):
+        df[col] = df[col].astype(float)
+    return df
+
+
+def fetch_bars_list(
+    symbol: str,
+    interval: str,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+) -> list[dict]:
+    """Lista de barras OHLCV para simulação de ordens limite."""
+    df = fetch_klines_range(symbol, interval, start, end)
+    if df.empty:
+        return []
+    return [
+        {
+            "ts": int(row["open_time"]),
+            "open": float(row["open"]),
+            "high": float(row["high"]),
+            "low": float(row["low"]),
+            "close": float(row["close"]),
+        }
+        for _, row in df.iterrows()
+    ]

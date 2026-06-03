@@ -1,7 +1,8 @@
 """
 Catálogo e scorecard das previsões Kronos (SQLite /data).
 
-Simulação padrão: capital 1000 USDC, 100 USDC por entrada (10% fixo).
+Simulação: capital 1000 USDC, 100 USDC por trade, ordens LIMITE na MEXC
+com taxas maker (fill limite) e taker (fechamento no vencimento).
 """
 
 from __future__ import annotations
@@ -14,14 +15,19 @@ from datetime import datetime, timezone
 import pandas as pd
 
 from lib.db import get_conn, init_db, now_utc
-from lib.mexc_klines import bars_to_timedelta, fetch_close_at
+from lib.mexc_klines import bars_to_timedelta, fetch_bars_list, fetch_close_at
 
 logger = logging.getLogger(__name__)
 
 NEUTRAL_THRESHOLD_PCT = 0.15
 INITIAL_CAPITAL_USDC = float(os.environ.get("KRONOS_INITIAL_CAPITAL", "1000"))
 POSITION_USDC = float(os.environ.get("KRONOS_POSITION_USDC", "100"))
-PNL_FLAT_THRESHOLD_USDC = 0.05
+PNL_FLAT_THRESHOLD_USDC = float(os.environ.get("KRONOS_FLAT_THRESHOLD_USDC", "0.05"))
+
+FEE_MAKER_PCT = float(os.environ.get("KRONOS_FEE_MAKER_PCT", "0.02"))
+FEE_TAKER_PCT = float(os.environ.get("KRONOS_FEE_TAKER_PCT", "0.05"))
+LIMIT_ENTRY_BARS = int(os.environ.get("KRONOS_LIMIT_ENTRY_BARS", "4"))
+LIMIT_EXIT_BARS = int(os.environ.get("KRONOS_LIMIT_EXIT_BARS", "0"))
 
 
 def init_kronos_tables() -> None:
@@ -61,7 +67,13 @@ def init_kronos_tables() -> None:
                 result_short        TEXT,
                 result_long         TEXT,
                 error_short_pct     REAL,
-                error_long_pct      REAL
+                error_long_pct      REAL,
+                order_type          TEXT DEFAULT 'limit',
+                entry_filled_short  INTEGER,
+                entry_fill_price_short REAL,
+                exit_fill_price_short  REAL,
+                fee_usdc_short      REAL,
+                exit_type_short     TEXT
             );
 
             CREATE INDEX IF NOT EXISTS idx_kronos_pred_due_short
@@ -80,6 +92,12 @@ def _migrate_columns(conn) -> None:
         ("pnl_usdc_long", "REAL"),
         ("result_short", "TEXT"),
         ("result_long", "TEXT"),
+        ("order_type", "TEXT DEFAULT 'limit'"),
+        ("entry_filled_short", "INTEGER"),
+        ("entry_fill_price_short", "REAL"),
+        ("exit_fill_price_short", "REAL"),
+        ("fee_usdc_short", "REAL"),
+        ("exit_type_short", "TEXT"),
     ]
     for name, typ in additions:
         if name not in existing:
@@ -94,17 +112,115 @@ def _iso(ts: datetime | pd.Timestamp) -> str:
     return ts.astimezone(timezone.utc).isoformat(timespec="seconds")
 
 
-def _pnl_usdc(sim_return_pct: float) -> float:
-    """PnL em USDC: posição fixa × retorno % da operação simulada."""
-    return round(POSITION_USDC * sim_return_pct / 100.0, 2)
+def _fee_usdc(notional: float, fee_pct: float) -> float:
+    return notional * (fee_pct / 100.0)
 
 
-def _result_label(pnl_usdc: float) -> str:
-    if pnl_usdc > PNL_FLAT_THRESHOLD_USDC:
-        return "gain"
-    if pnl_usdc < -PNL_FLAT_THRESHOLD_USDC:
-        return "loss"
-    return "flat"
+def _limit_entry_fill(
+    bars: list[dict],
+    limit_price: float,
+    side: str,
+    max_bars: int,
+) -> tuple[bool, float | None, int]:
+    for i, b in enumerate(bars[:max_bars]):
+        if side == "long":
+            if b["low"] <= limit_price:
+                return True, limit_price, i
+        else:
+            if b["high"] >= limit_price:
+                return True, limit_price, i
+    return False, None, -1
+
+
+def _limit_exit_fill(bars: list[dict], limit_price: float, side: str) -> tuple[bool, float | None]:
+    for b in bars:
+        if side == "long":
+            if b["high"] >= limit_price:
+                return True, limit_price
+        else:
+            if b["low"] <= limit_price:
+                return True, limit_price
+    return False, None
+
+
+def simulate_limit_trade(
+    *,
+    bias: str,
+    price_base: float,
+    target: float,
+    bars_after_signal: list[dict],
+    due_close: float,
+) -> dict:
+    """Entrada limite no preço base; saída limite no alvo; senão taker no vencimento."""
+    if bias == "NEUTRO" or not bars_after_signal:
+        return {
+            "entry_filled": False,
+            "entry_fill_price": None,
+            "exit_fill_price": due_close,
+            "sim_return_pct": 0.0,
+            "pnl_usdc": 0.0,
+            "fee_usdc": 0.0,
+            "result": "skip",
+            "exit_type": "none",
+        }
+
+    side = "long" if bias == "BULLISH" else "short"
+    entry_ok, entry_px, entry_idx = _limit_entry_fill(
+        bars_after_signal, price_base, side, LIMIT_ENTRY_BARS
+    )
+    if not entry_ok or entry_px is None:
+        return {
+            "entry_filled": False,
+            "entry_fill_price": None,
+            "exit_fill_price": None,
+            "sim_return_pct": 0.0,
+            "pnl_usdc": 0.0,
+            "fee_usdc": 0.0,
+            "result": "no_fill",
+            "exit_type": "entry_timeout",
+        }
+
+    fee_entry = _fee_usdc(POSITION_USDC, FEE_MAKER_PCT)
+    exit_bars = bars_after_signal[entry_idx + 1 :]
+    if LIMIT_EXIT_BARS > 0:
+        exit_bars = exit_bars[:LIMIT_EXIT_BARS]
+
+    exit_ok, exit_px = _limit_exit_fill(exit_bars, target, side)
+    if exit_ok and exit_px is not None:
+        exit_type = "limit_target"
+        fee_exit = _fee_usdc(POSITION_USDC, FEE_MAKER_PCT)
+    else:
+        exit_type = "market_due"
+        exit_px = due_close
+        fee_exit = _fee_usdc(POSITION_USDC, FEE_TAKER_PCT)
+
+    if side == "long":
+        gross_pct = (exit_px - entry_px) / entry_px * 100.0
+    else:
+        gross_pct = (entry_px - exit_px) / entry_px * 100.0
+
+    total_fee = fee_entry + fee_exit
+    gross_pnl = POSITION_USDC * (gross_pct / 100.0)
+    net_pnl = gross_pnl - total_fee
+    net_pct = (net_pnl / POSITION_USDC) * 100.0
+
+    if net_pnl > PNL_FLAT_THRESHOLD_USDC:
+        result = "gain"
+    elif net_pnl < -PNL_FLAT_THRESHOLD_USDC:
+        result = "loss"
+    else:
+        result = "flat"
+
+    return {
+        "entry_filled": True,
+        "entry_fill_price": entry_px,
+        "exit_fill_price": exit_px,
+        "sim_return_pct": round(net_pct, 4),
+        "pnl_usdc": round(net_pnl, 2),
+        "fee_usdc": round(total_fee, 4),
+        "result": result,
+        "exit_type": exit_type,
+    }
 
 
 def log_predictions(run_id: str, analysis_time: datetime, tf_label: str, interval: str,
@@ -121,8 +237,8 @@ def log_predictions(run_id: str, analysis_time: datetime, tf_label: str, interva
                     run_id, created_at, ticker, symbol, timeframe, interval,
                     candle_time, price_base, target_short, target_long,
                     pct_short, pct_long, bias, short_bars, pred_len,
-                    due_short, due_long, position_usdc
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    due_short, due_long, position_usdc, order_type
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     run_id,
                     _iso(analysis_time),
@@ -142,6 +258,7 @@ def log_predictions(run_id: str, analysis_time: datetime, tf_label: str, interva
                     _iso(due_short),
                     _iso(due_long),
                     POSITION_USDC,
+                    "limit",
                 ),
             )
             n += 1
@@ -157,7 +274,7 @@ def _direction_hit(bias: str, actual_pct: float) -> int | None:
     return 1 if abs(actual_pct) <= NEUTRAL_THRESHOLD_PCT else 0
 
 
-def _sim_return(bias: str, actual_pct: float) -> float:
+def _sim_return_market(bias: str, actual_pct: float) -> float:
     if bias == "BULLISH":
         return actual_pct
     if bias == "BEARISH":
@@ -165,10 +282,92 @@ def _sim_return(bias: str, actual_pct: float) -> float:
     return 0.0
 
 
-def _score_row(conn, row: dict, horizon: str, now: str) -> dict | None:
-    due_col = "due_short" if horizon == "short" else "due_long"
-    pct_col = "pct_short" if horizon == "short" else "pct_long"
-    due = pd.Timestamp(row[due_col])
+def _result_label(pnl_usdc: float) -> str:
+    if pnl_usdc > PNL_FLAT_THRESHOLD_USDC:
+        return "gain"
+    if pnl_usdc < -PNL_FLAT_THRESHOLD_USDC:
+        return "loss"
+    return "flat"
+
+
+def _score_row_short_limit(conn, row: dict, now: str) -> dict | None:
+    """Scorecard curto: ordens limite + taxas MEXC."""
+    candle = pd.Timestamp(row["candle_time"]).tz_convert("UTC")
+    due = pd.Timestamp(row["due_short"]).tz_convert("UTC")
+    delta = bars_to_timedelta(row["interval"], 1)
+    end = due + delta * 2
+
+    actual = fetch_close_at(row["symbol"], row["interval"], due)
+    bars = fetch_bars_list(row["symbol"], row["interval"], candle, end)
+    if actual is None and bars:
+        actual = bars[-1]["close"]
+    if actual is None:
+        return None
+
+    base = row["price_base"]
+    actual_pct = (actual - base) / base * 100
+    hit = _direction_hit(row["bias"], actual_pct)
+    err = abs(row["pct_short"] - actual_pct)
+
+    candle_ms = int(candle.timestamp() * 1000)
+    bars_after = [b for b in bars if b["ts"] > candle_ms]
+
+    sim = simulate_limit_trade(
+        bias=row["bias"],
+        price_base=base,
+        target=row["target_short"],
+        bars_after_signal=bars_after,
+        due_close=float(actual),
+    )
+
+    sim_return = sim["sim_return_pct"]
+    pnl = sim["pnl_usdc"]
+    result = sim["result"]
+
+    conn.execute(
+        """UPDATE kronos_predictions SET
+            actual_short=?, scored_short_at=?, direction_hit_short=?,
+            sim_return_short=?, pnl_usdc_short=?, result_short=?, error_short_pct=?,
+            entry_filled_short=?, entry_fill_price_short=?, exit_fill_price_short=?,
+            fee_usdc_short=?, exit_type_short=?
+           WHERE id=?""",
+        (
+            actual,
+            now,
+            hit,
+            sim_return,
+            pnl,
+            result,
+            err,
+            1 if sim.get("entry_filled") else 0,
+            sim.get("entry_fill_price"),
+            sim.get("exit_fill_price"),
+            sim.get("fee_usdc", 0),
+            sim.get("exit_type"),
+            row["id"],
+        ),
+    )
+
+    return {
+        **row,
+        "horizon": "short",
+        "actual": actual,
+        "actual_pct": actual_pct,
+        "sim_return": sim_return,
+        "pnl_usdc": pnl,
+        "result": result,
+        "direction_hit": hit,
+        "entry_filled": sim.get("entry_filled"),
+        "entry_fill_price": sim.get("entry_fill_price"),
+        "exit_fill_price": sim.get("exit_fill_price"),
+        "fee_usdc": sim.get("fee_usdc", 0),
+        "exit_type": sim.get("exit_type"),
+    }
+
+
+def _score_row_long_market(conn, row: dict, now: str) -> dict | None:
+    """Horizonte longo: close real no vencimento (sem limite, para referência)."""
+    due = pd.Timestamp(row["due_long"])
     actual = fetch_close_at(row["symbol"], row["interval"], due)
     if actual is None:
         return None
@@ -176,31 +375,22 @@ def _score_row(conn, row: dict, horizon: str, now: str) -> dict | None:
     base = row["price_base"]
     actual_pct = (actual - base) / base * 100
     hit = _direction_hit(row["bias"], actual_pct)
-    sim = _sim_return(row["bias"], actual_pct)
-    pnl = _pnl_usdc(sim)
+    sim = _sim_return_market(row["bias"], actual_pct)
+    pnl = round(POSITION_USDC * sim / 100.0, 2)
     result = _result_label(pnl)
-    err = abs(row[pct_col] - actual_pct)
+    err = abs(row["pct_long"] - actual_pct)
 
-    if horizon == "short":
-        conn.execute(
-            """UPDATE kronos_predictions SET
-                actual_short=?, scored_short_at=?, direction_hit_short=?,
-                sim_return_short=?, pnl_usdc_short=?, result_short=?, error_short_pct=?
-               WHERE id=?""",
-            (actual, now, hit, sim, pnl, result, err, row["id"]),
-        )
-    else:
-        conn.execute(
-            """UPDATE kronos_predictions SET
-                actual_long=?, scored_long_at=?, direction_hit_long=?,
-                sim_return_long=?, pnl_usdc_long=?, result_long=?, error_long_pct=?
-               WHERE id=?""",
-            (actual, now, hit, sim, pnl, result, err, row["id"]),
-        )
+    conn.execute(
+        """UPDATE kronos_predictions SET
+            actual_long=?, scored_long_at=?, direction_hit_long=?,
+            sim_return_long=?, pnl_usdc_long=?, result_long=?, error_long_pct=?
+           WHERE id=?""",
+        (actual, now, hit, sim, pnl, result, err, row["id"]),
+    )
 
     return {
         **row,
-        "horizon": horizon,
+        "horizon": "long",
         "actual": actual,
         "actual_pct": actual_pct,
         "sim_return": sim,
@@ -208,6 +398,12 @@ def _score_row(conn, row: dict, horizon: str, now: str) -> dict | None:
         "result": result,
         "direction_hit": hit,
     }
+
+
+def _score_row(conn, row: dict, horizon: str, now: str) -> dict | None:
+    if horizon == "short":
+        return _score_row_short_limit(conn, row, now)
+    return _score_row_long_market(conn, row, now)
 
 
 def score_mature_predictions() -> list[dict]:
@@ -229,15 +425,14 @@ def score_mature_predictions() -> list[dict]:
                 if scored:
                     newly_scored.append(scored)
 
-    _backfill_pnl(conn=None)
+    _backfill_pnl()
     logger.info("Kronos tracker: %d horizontes avaliados", len(newly_scored))
     return newly_scored
 
 
-def _backfill_pnl(conn=None) -> None:
+def _backfill_pnl() -> None:
     """Preenche PnL em linhas antigas (antes da coluna existir)."""
-    with get_conn() as c:
-        conn = conn or c
+    with get_conn() as conn:
         conn.execute(
             """UPDATE kronos_predictions
                SET pnl_usdc_short = ROUND(? * sim_return_short / 100.0, 2),
@@ -247,7 +442,8 @@ def _backfill_pnl(conn=None) -> None:
                      ELSE 'flat' END
                WHERE scored_short_at IS NOT NULL
                  AND sim_return_short IS NOT NULL
-                 AND (pnl_usdc_short IS NULL OR result_short IS NULL)""",
+                 AND (pnl_usdc_short IS NULL OR result_short IS NULL)
+                 AND result_short NOT IN ('no_fill', 'skip')""",
             (
                 POSITION_USDC, POSITION_USDC, PNL_FLAT_THRESHOLD_USDC,
                 POSITION_USDC, -PNL_FLAT_THRESHOLD_USDC,
@@ -257,6 +453,10 @@ def _backfill_pnl(conn=None) -> None:
 
 def _row_to_dict(row) -> dict:
     return dict(row) if not isinstance(row, dict) else row
+
+
+def _is_counted_trade(result: str | None) -> bool:
+    return result in ("gain", "loss", "flat")
 
 
 def _aggregate_stats(days: int | None = None, horizon: str = "short") -> dict:
@@ -273,7 +473,7 @@ def _aggregate_stats(days: int | None = None, horizon: str = "short") -> dict:
             rows = conn.execute(
                 f"""SELECT * FROM kronos_predictions
                     WHERE {scored_col} IS NOT NULL
-                      AND {pnl_col} IS NOT NULL
+                      AND {result_col} IS NOT NULL
                       AND created_at >= datetime('now', ?)
                     ORDER BY {scored_col} ASC""",
                 (window,),
@@ -281,23 +481,27 @@ def _aggregate_stats(days: int | None = None, horizon: str = "short") -> dict:
         else:
             rows = conn.execute(
                 f"""SELECT * FROM kronos_predictions
-                    WHERE {scored_col} IS NOT NULL AND {pnl_col} IS NOT NULL
+                    WHERE {scored_col} IS NOT NULL AND {result_col} IS NOT NULL
                     ORDER BY {scored_col} ASC"""
             ).fetchall()
 
     rows = [_row_to_dict(r) for r in rows]
-    if not rows:
+    traded = [r for r in rows if _is_counted_trade(r.get(result_col))]
+    no_fill = sum(1 for r in rows if r.get(result_col) == "no_fill")
+
+    if not traded:
         return {
             "count": 0,
+            "no_fill": no_fill,
             "initial_capital": INITIAL_CAPITAL_USDC,
             "position_usdc": POSITION_USDC,
             "pending_short": _count_pending("short"),
             "pending_long": _count_pending("long"),
         }
 
-    pnls = [r[pnl_col] for r in rows]
-    results = [r[result_col] for r in rows]
-    hits = [r[f"direction_hit_{horizon}"] for r in rows if r.get(f"direction_hit_{horizon}") is not None]
+    pnls = [r[pnl_col] for r in traded]
+    hits = [r[f"direction_hit_{horizon}"] for r in traded if r.get(f"direction_hit_{horizon}") is not None]
+    fees = sum(float(r.get("fee_usdc_short") or 0) for r in traded) if horizon == "short" else 0.0
 
     gains = [p for p in pnls if p > PNL_FLAT_THRESHOLD_USDC]
     losses = [p for p in pnls if p < -PNL_FLAT_THRESHOLD_USDC]
@@ -311,7 +515,7 @@ def _aggregate_stats(days: int | None = None, horizon: str = "short") -> dict:
     win_rate_dir = round(100 * sum(hits) / len(hits), 1) if hits else 0.0
 
     by_tf: dict[str, list[float]] = {}
-    for r in rows:
+    for r in traded:
         by_tf.setdefault(r["timeframe"], []).append(r[pnl_col])
 
     tf_pnl = {tf: round(sum(v), 2) for tf, v in by_tf.items()}
@@ -326,6 +530,8 @@ def _aggregate_stats(days: int | None = None, horizon: str = "short") -> dict:
 
     return {
         "count": len(pnls),
+        "no_fill": no_fill,
+        "total_fees_usdc": round(fees, 2),
         "initial_capital": INITIAL_CAPITAL_USDC,
         "position_usdc": POSITION_USDC,
         "equity_end": equity_end,
@@ -356,15 +562,32 @@ def _count_pending(horizon: str) -> int:
 
 
 def format_trade_result(r: dict) -> str:
-    """Uma linha por previsão fechada."""
-    icon = "✅" if r["result"] == "gain" else "❌" if r["result"] == "loss" else "➖"
-    label = r["result"].upper()
+    """Uma linha por previsão fechada (limite + taxas no horizonte curto)."""
+    res = r.get("result", "")
+    if res == "skip":
+        return (
+            f"➖ <b>NEUTRO</b> {r['ticker']} {r['timeframe']} — sem simulação\n"
+            f"   Close vencimento: ${r['actual']:,.2f} ({r['actual_pct']:+.2f}%)"
+        )
+    if res == "no_fill":
+        return (
+            f"⏳ <b>SEM FILL</b> {r['ticker']} {r['timeframe']} {r['bias']}\n"
+            f"   Entrada limite @ ${r['price_base']:,.2f} não preenchida em {LIMIT_ENTRY_BARS} barras"
+        )
+
+    icon = "✅" if res == "gain" else "❌" if res == "loss" else "➖"
+    label = res.upper()
     created = r.get("created_at", "")[:16].replace("T", " ")
+    fee = float(r.get("fee_usdc") or 0)
+    exit_lbl = "limite no alvo" if r.get("exit_type") == "limit_target" else "fech. vencimento (taker)"
+    entry_px = r.get("entry_fill_price") or r["price_base"]
+    exit_px = r.get("exit_fill_price") or r["actual"]
+
     return (
-        f"{icon} <b>{label}</b> {r['ticker']} {r['timeframe']} {r['bias']}\n"
-        f"   Entrada sim: ${POSITION_USDC:.0f} @ base ${r['price_base']:,.2f}\n"
-        f"   Saída real: ${r['actual']:,.2f} ({r['actual_pct']:+.2f}%)\n"
-        f"   <b>PnL: ${r['pnl_usdc']:+.2f}</b> ({r['sim_return']:+.2f}% s/ posição) · {created}"
+        f"{icon} <b>{label}</b> {r['ticker']} {r['timeframe']} {r['bias']} · ordem limite\n"
+        f"   Entrada: ${POSITION_USDC:.0f} @ ${entry_px:,.2f} → saída ${exit_px:,.2f} ({exit_lbl})\n"
+        f"   Close vencimento: ${r['actual']:,.2f} ({r['actual_pct']:+.2f}%)\n"
+        f"   <b>PnL líq.: ${r['pnl_usdc']:+.2f}</b> ({r['sim_return']:+.2f}%) · taxas ${fee:.2f} · {created}"
     )
 
 
@@ -382,7 +605,10 @@ def format_newly_scored_trades(trades: list[dict]) -> str:
 
 def format_scorecard_block(label: str, s: dict) -> str:
     if s.get("count", 0) == 0:
-        return f"<b>{label}</b>: ainda sem previsões fechadas"
+        pending = s.get("pending_short", 0)
+        nf = s.get("no_fill", 0)
+        extra = f" · {nf} sem fill" if nf else ""
+        return f"<b>{label}</b>: ainda sem trades fechados ({pending} pendentes{extra})"
 
     cap = s["initial_capital"]
     pos = s["position_usdc"]
@@ -392,11 +618,14 @@ def format_scorecard_block(label: str, s: dict) -> str:
     )
     pf = s.get("profit_factor")
     pf_txt = f"{pf:.2f}" if pf is not None else "n/a"
+    nf = s.get("no_fill", 0)
+    fees = s.get("total_fees_usdc", 0)
 
     return "\n".join([
-        f"<b>{label}</b> — {s['count']} entradas de ${pos:.0f} (capital ${cap:.0f})",
-        f"  🎯 Acerto (PnL): <b>{s['win_rate_pnl_pct']}%</b> "
+        f"<b>{label}</b> — {s['count']} trades de ${pos:.0f} (capital ${cap:.0f})",
+        f"  🎯 Acerto (PnL líq.): <b>{s['win_rate_pnl_pct']}%</b> "
         f"({s['gains']} gain / {s['losses']} loss / {s['flats']} flat)",
+        f"  ⏳ Sem fill entrada: {nf} · taxas totais: ${fees:.2f}",
         f"  📐 Acerto direção: {s['accuracy_pct']}%",
         f"  💰 PnL total: <b>${s['total_pnl_usdc']:+.2f}</b> "
         f"→ equity sim <b>${s['equity_end']:.2f}</b> ({s['return_on_capital_pct']:+.2f}% s/ ${cap:.0f})",
@@ -411,7 +640,8 @@ def format_scorecard_telegram(new_trades: list[dict] | None = None) -> str:
     lines = [
         "<b>📊 Scorecard Kronos — simulação</b>",
         f"Capital <b>${INITIAL_CAPITAL_USDC:.0f}</b> · "
-        f"<b>${POSITION_USDC:.0f}</b> por entrada · horizonte curto",
+        f"<b>${POSITION_USDC:.0f}</b> por trade · <b>ordens limite</b>",
+        f"Taxas MEXC: maker {FEE_MAKER_PCT}% · taker {FEE_TAKER_PCT}%",
         "",
     ]
 
@@ -427,8 +657,9 @@ def format_scorecard_telegram(new_trades: list[dict] | None = None) -> str:
     lines.append("")
     lines.append(
         f"<i>Pendentes: {s7.get('pending_short', 0)} curto. "
-        "Cada trade = seguir viés no preço base, sair no close real do horizonte, "
-        f"posição fixa ${POSITION_USDC:.0f} (sem taxas/alavancagem).</i>"
+        "Entrada limite no preço base (até "
+        f"{LIMIT_ENTRY_BARS} barras); saída limite no alvo curto ou taker no vencimento. "
+        f"Posição ${POSITION_USDC:.0f} — sem alavancagem.</i>"
     )
     return "\n".join(lines)
 
@@ -439,8 +670,10 @@ def format_scorecard_brief(days: int = 7) -> str:
         return (
             f"📊 <i>Scorecard {days}d: {s.get('pending_short', 0)} previsões aguardando fechar</i>"
         )
+    nf = s.get("no_fill", 0)
+    nf_txt = f" · {nf} sem fill" if nf else ""
     return (
-        f"📊 <b>{days}d</b> {s['count']} trades ${s['position_usdc']:.0f}: "
+        f"📊 <b>{days}d</b> {s['count']} trades ${s['position_usdc']:.0f} (limite+taxas){nf_txt}: "
         f"<b>{s['win_rate_pnl_pct']}%</b> gain "
         f"({s['gains']}✅/{s['losses']}❌) · "
         f"PnL <b>${s['total_pnl_usdc']:+.2f}</b> "
