@@ -17,9 +17,12 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger(__name__)
 
 
-def run() -> None:
+def run(dry_run: bool = False) -> None:
     init_kronos_tables()
     body = format_daily_report_telegram()
+    if dry_run:
+        print(body.replace("<b>", "").replace("</b>", "").replace("<i>", "").replace("</i>", ""))
+        return
     ok = send_kronos_alert("Relatório diário — performance por timeframe", body)
     if ok:
         logger.info("Relatório diário [KRONOS] enviado")
@@ -29,4 +32,4 @@ def run() -> None:
 
 
 if __name__ == "__main__":
-    run()
+    run(dry_run="--dry-run" in sys.argv)
