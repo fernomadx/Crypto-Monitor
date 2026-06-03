@@ -61,8 +61,10 @@ def resolve_mexc_symbols() -> list[str]:
     return symbols
 KRONOS_TIMEFRAMES = os.environ.get("KRONOS_TIMEFRAMES", "1h,4h,1d")
 KRONOS_SAMPLE_COUNT = int(os.environ.get("KRONOS_SAMPLE_COUNT", "4"))
-KRONOS_TEMPERATURE = float(os.environ.get("KRONOS_TEMPERATURE", "1.0"))
+KRONOS_TEMPERATURE = float(os.environ.get("KRONOS_TEMPERATURE", "0.85"))
 KRONOS_TOP_P = float(os.environ.get("KRONOS_TOP_P", "0.9"))
+# Barras usadas para "viés curto" (evita exageros do fim do horizonte longo)
+KRONOS_SHORT_BARS = int(os.environ.get("KRONOS_SHORT_BARS", "4"))
 
 INTERVAL_DELTAS = {
     "1m": timedelta(minutes=1),
@@ -93,9 +95,9 @@ class TimeframeConfig:
 
 
 TIMEFRAME_PRESETS: dict[str, TimeframeConfig] = {
-    "1h": TimeframeConfig("1h", "1H", lookback=250, pred_len=24, chart_bars=72),
-    "4h": TimeframeConfig("4h", "4H", lookback=200, pred_len=18, chart_bars=48),
-    "1d": TimeframeConfig("1d", "Diário", lookback=120, pred_len=14, chart_bars=60),
+    "1h": TimeframeConfig("1h", "1H", lookback=250, pred_len=12, chart_bars=72),
+    "4h": TimeframeConfig("4h", "4H", lookback=200, pred_len=12, chart_bars=48),
+    "1d": TimeframeConfig("1d", "Diário", lookback=120, pred_len=7, chart_bars=60),
 }
 
 
@@ -160,6 +162,65 @@ def bias_from_pct(pct: float) -> tuple[str, str]:
     return "NEUTRO", "⚪"
 
 
+def pct_change_to_bar(pred_df: pd.DataFrame, last_close: float, bar_index: int) -> float:
+    """Variação % até a barra N da previsão (0 = primeira barra futura)."""
+    idx = min(max(bar_index, 0), len(pred_df) - 1)
+    pred_close = float(pred_df["close"].iloc[idx])
+    return (pred_close - last_close) / last_close * 100
+
+
+def hist_return_correlation(results: list[dict]) -> dict[str, float]:
+    """Correlação dos retornos recentes vs BTC (quanto o par costuma seguir o BTC)."""
+    btc = next((r for r in results if r["ticker"] == "BTC"), None)
+    if not btc or len(btc["chart_hist"]) < 20:
+        return {}
+    btc_ret = btc["chart_hist"]["close"].astype(float).pct_change().dropna()
+    out: dict[str, float] = {"BTC": 1.0}
+    for r in results:
+        if r["ticker"] == "BTC":
+            continue
+        ret = r["chart_hist"]["close"].astype(float).pct_change().dropna()
+        n = min(len(btc_ret), len(ret), 60)
+        if n < 15:
+            continue
+        c = btc_ret.iloc[-n:].corr(ret.iloc[-n:])
+        if c == c:  # not NaN
+            out[r["ticker"]] = float(c)
+    return out
+
+
+def coherence_notes(results: list[dict], corrs: dict[str, float]) -> list[str]:
+    """
+    Alerta quando o modelo prevê movimentos opostos fortes entre pares correlacionados.
+    """
+    notes: list[str] = []
+    btc = next((r for r in results if r["ticker"] == "BTC"), None)
+    if not btc:
+        return notes
+
+    btc_pct = btc["pct_short"]
+    for r in results:
+        if r["ticker"] == "BTC":
+            continue
+        alt_pct = r["pct_short"]
+        corr = corrs.get(r["ticker"], 0.5)
+        opposite = btc_pct * alt_pct < 0
+        strong = abs(btc_pct) >= 1.0 and abs(alt_pct) >= 2.0
+        if opposite and strong and corr >= 0.45:
+            notes.append(
+                f"⚠️ <b>{r['ticker']}</b> diverge do BTC (corr. recente {corr:.2f}): "
+                f"BTC {btc_pct:+.1f}% vs {r['ticker']} {alt_pct:+.1f}% no curto prazo — "
+                f"<i>baixa confiança / possível ruído do modelo</i>"
+            )
+    if len(notes) >= 2:
+        notes.insert(
+            0,
+            "⚠️ <b>Cenário cruzado improvável</b>: altcoins e BTC raramente divergem tanto "
+            "no mesmo período. Não use como trade isolado.",
+        )
+    return notes
+
+
 def analyze_symbol(predictor, symbol: str, tf: TimeframeConfig) -> dict:
     need = tf.lookback + 5
     df = fetch_mexc_klines(symbol, tf.interval, limit=min(need, MEXC_KLINES_MAX_LIMIT))
@@ -185,9 +246,12 @@ def analyze_symbol(predictor, symbol: str, tf: TimeframeConfig) -> dict:
         verbose=False,
     )
 
-    pred_close = float(pred_df["close"].iloc[-1])
-    pct = (pred_close - last_close) / last_close * 100
-    bias, icon = bias_from_pct(pct)
+    short_idx = min(KRONOS_SHORT_BARS - 1, len(pred_df) - 1)
+    pred_close_short = float(pred_df["close"].iloc[short_idx])
+    pred_close_long = float(pred_df["close"].iloc[-1])
+    pct_short = pct_change_to_bar(pred_df, last_close, short_idx)
+    pct_long = pct_change_to_bar(pred_df, last_close, len(pred_df) - 1)
+    bias, icon = bias_from_pct(pct_short)
     ticker = symbol.replace("USDT", "")
 
     chart_hist = hist.iloc[-tf.chart_bars:][["timestamps", "open", "high", "low", "close"]].copy()
@@ -198,11 +262,15 @@ def analyze_symbol(predictor, symbol: str, tf: TimeframeConfig) -> dict:
         "timeframe": tf.label,
         "interval": tf.interval,
         "last_close": last_close,
-        "pred_close": pred_close,
-        "pct": pct,
+        "pred_close": pred_close_short,
+        "pred_close_long": pred_close_long,
+        "pct": pct_long,
+        "pct_short": pct_short,
+        "pct_long": pct_long,
         "bias": bias,
         "icon": icon,
         "pred_len": tf.pred_len,
+        "short_bars": short_idx + 1,
         "chart_hist": chart_hist,
         "pred_df": pred_df,
         "split_ts": last_ts,
@@ -250,10 +318,11 @@ def render_timeframe_chart(analyses: list[dict], tf_label: str, out_path: Path) 
         split = item["split_ts"]
         ax.axvline(split, color="#fbbf24", linestyle="--", linewidth=1.2, alpha=0.9, label="Agora → previsto")
 
-        sign = "+" if item["pct"] >= 0 else ""
+        sign = "+" if item["pct_short"] >= 0 else ""
         ax.set_title(
             f"{item['ticker']}  {item['icon']} {item['bias']}  "
-            f"${item['last_close']:,.2f} → ${item['pred_close']:,.2f} ({sign}{item['pct']:.2f}%)",
+            f"${item['last_close']:,.2f} → ${item['pred_close']:,.2f} "
+            f"({sign}{item['pct_short']:.2f}% em {item['short_bars']} barras)",
             color="white",
             fontsize=11,
             pad=8,
@@ -280,18 +349,39 @@ def render_timeframe_chart(analyses: list[dict], tf_label: str, out_path: Path) 
 
 
 def format_timeframe_summary(tf_label: str, results: list[dict]) -> str:
-    lines = [f"<b>━━ {tf_label} ━━</b>  (horizonte: {results[0]['pred_len']} barras)"]
+    pred_len = results[0]["pred_len"]
+    short_bars = results[0]["short_bars"]
+    lines = [
+        f"<b>━━ {tf_label} ━━</b>",
+        f"<i>Viés = próximas {short_bars} barras | Horizonte total = {pred_len} barras</i>",
+        "",
+    ]
+    corrs = hist_return_correlation(results)
     for r in results:
-        sign = "+" if r["pct"] >= 0 else ""
+        ss = "+" if r["pct_short"] >= 0 else ""
+        sl = "+" if r["pct_long"] >= 0 else ""
+        corr_txt = ""
+        if r["ticker"] != "BTC" and r["ticker"] in corrs:
+            corr_txt = f" | corr. BTC {corrs[r['ticker']]:.2f}"
         lines.append(
-            f"{r['icon']} <b>{r['ticker']}</b> {r['bias']}: "
-            f"${r['last_close']:,.2f} → ${r['pred_close']:,.2f} ({sign}{r['pct']:.2f}%)"
+            f"{r['icon']} <b>{r['ticker']}</b> {r['bias']}{corr_txt}\n"
+            f"  Curto ({short_bars} barras): {ss}{r['pct_short']:.2f}% → "
+            f"${r['pred_close']:,.2f}\n"
+            f"  Longo ({pred_len} barras): {sl}{r['pct_long']:.2f}% → "
+            f"${r['pred_close_long']:,.2f}"
         )
+    for note in coherence_notes(results, corrs):
+        lines.append("")
+        lines.append(note)
     return "\n".join(lines)
 
 
 def format_full_report(sections: list[str]) -> str:
-    header = f"Modelo: <code>{KRONOS_MODEL}</code>"
+    header = (
+        f"Modelo: <code>{KRONOS_MODEL}</code>\n"
+        "<i>Previsão estatística (ML), não análise fundamental. "
+        "Cripto costuma mover em bloco — divergências fortes costumam ser ruído.</i>"
+    )
     return header + "\n\n" + "\n\n".join(sections)
 
 

@@ -63,7 +63,11 @@ def send_kronos_alert(title: str, body: str) -> bool:
 
     Prefixo fixo [KRONOS] para filtrar no Telegram sem misturar com funding/sentiment.
     """
-    text = f"📈 <b>[KRONOS]</b> {title}\n\n{body}\n\n<i>Sinal informativo — não é ordem de trade.</i>"
+    text = (
+        f"📈 <b>[KRONOS]</b> {title}\n\n{body}\n\n"
+        "<i>Experimental — não é recomendação de trade. "
+        "Confirme com preço, funding e notícias do monitor.</i>"
+    )
     return send(text)
 
 
