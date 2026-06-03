@@ -111,7 +111,7 @@ Actions → **Deploy Kronos to VPS** → **Run workflow**
 | Cron | no container | `crontab` do host |
 | Custo | RAM limitada | CPX31 ~fixo/mês, CPU estável |
 
-O **Dockerfile principal** do Railway **não roda mais Kronos** — só este servidor (Hetzner) envia `[KRONOS]` no bot dedicado.
+Para **não duplicar** alertas Kronos no bot do Railway, remova as linhas `kronos_*` do `crontab` do Dockerfile no Railway (ou desative só o Kronos lá).
 
 ---
 

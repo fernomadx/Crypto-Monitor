@@ -134,28 +134,31 @@ O `docker-compose.yml` monta `./data` em `/data` para persistência local.
 
 ---
 
-## Kronos — **separado** do crypto-monitor
+## Kronos — alerta `[KRONOS]` (mesmo bot, mesmas variáveis)
 
-| Serviço | O quê roda | Telegram |
-|---------|------------|----------|
-| **Railway** (`Dockerfile`) | funding, MEXC, news, orchestrator | `TELEGRAM_*` |
-| **Hetzner BTCCURSOR** | só Kronos + scorecard | `KRONOS_TELEGRAM_*` (bot próprio) |
+Usa **automaticamente** o que já está no Railway: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TICKERS` (BTC, ETH, SOL → MEXC).
 
-O **`Dockerfile` principal não inclui mais Kronos** (imagem menor, menos RAM no monitor).
+### Railway (automático no mesmo serviço)
 
-### Onde rodar Kronos (recomendado)
+O **`Dockerfile` principal** já inclui Kronos. Após cada deploy:
 
-**Hetzner — BTCCURSOR:** [`vps/BTCCURSOR.md`](vps/BTCCURSOR.md)
+1. Mensagem `[KRONOS] Serviço iniciado` no Telegram (~1 min)
+2. `[KRONOS] Processando...` e depois previsão + **3 gráficos** (15–40 min em CPU)
+3. Cron **a cada 4h** (minuto :15)
+
+**Requisito:** aumente RAM do serviço para **≥2 GB** no Railway (Settings → Resources), senão o container pode reiniciar ao carregar o modelo.
+
+Serviço separado (`Dockerfile.kronos`) só se quiser isolar o custo/RAM.
+
+### Opção B — VPS BTCCURSOR (bot Telegram **separado**)
+
+Guia: [`vps/BTCCURSOR.md`](vps/BTCCURSOR.md) — crie um bot em @BotFather (`KRONOS_TELEGRAM_*`).
 
 ```bash
-ssh root@IP_HETZNER
-sudo bash /opt/crypto-monitor/vps/install.sh
-crontab -e   # vps/crontab.example
+sudo bash vps/install.sh
 ```
 
-### Opcional — segundo serviço Railway
-
-`Dockerfile.kronos` + volume `/data` — só se não usar Hetzner. Não misture com o serviço principal.
+[`vps/README.md`](vps/README.md) · DB próprio na VPS (`kronos_vps.db`)
 
 ## Estrutura de arquivos
 
