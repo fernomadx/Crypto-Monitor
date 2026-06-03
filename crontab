@@ -18,3 +18,8 @@
 
 # Kronos: previsão + gráficos 1H/4H/Diário → Telegram [KRONOS] (a cada 4h, +15min do orchestrator)
 15 */4 * * * python /app/vps/kronos_signal.py >> /data/kronos.log 2>&1
+
+# Kronos scorecard: avalia previsões maduras (Telegram só se houver novidades)
+30 */4 * * * python /app/vps/kronos_scorecard.py >> /data/kronos_scorecard.log 2>&1
+# Relatório completo semanal (domingo 12:30 UTC)
+30 12 * * 0 python /app/vps/kronos_scorecard.py --weekly >> /data/kronos_scorecard.log 2>&1

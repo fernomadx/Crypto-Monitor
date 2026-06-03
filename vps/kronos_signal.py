@@ -24,7 +24,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import pandas as pd
-import requests
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
@@ -32,12 +31,13 @@ sys.path.insert(0, str(REPO_ROOT))
 KRONOS_ROOT = Path(os.environ.get("KRONOS_PATH", REPO_ROOT / "Kronos"))
 sys.path.insert(0, str(KRONOS_ROOT))
 
+from lib.kronos_tracker import format_scorecard_brief, log_predictions, new_run_id  # noqa: E402
+from lib.mexc_klines import INTERVAL_DELTAS, MEXC_KLINES_MAX_LIMIT, fetch_klines  # noqa: E402
 from lib.telegram import send_kronos_alert, send_kronos_photo  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-MEXC_BASE = "https://api.mexc.com"
 CHART_DIR = Path(os.environ.get("KRONOS_CHART_DIR", REPO_ROOT / "vps" / "charts"))
 
 KRONOS_MODEL = os.environ.get("KRONOS_MODEL", "NeoQuasar/Kronos-mini")
@@ -66,25 +66,6 @@ KRONOS_TOP_P = float(os.environ.get("KRONOS_TOP_P", "0.9"))
 # Barras usadas para "viés curto" (evita exageros do fim do horizonte longo)
 KRONOS_SHORT_BARS = int(os.environ.get("KRONOS_SHORT_BARS", "4"))
 
-INTERVAL_DELTAS = {
-    "1m": timedelta(minutes=1),
-    "5m": timedelta(minutes=5),
-    "15m": timedelta(minutes=15),
-    "30m": timedelta(minutes=30),
-    "1h": timedelta(hours=1),
-    "60m": timedelta(hours=1),
-    "4h": timedelta(hours=4),
-    "1d": timedelta(days=1),
-}
-
-# MEXC Spot v3 não aceita "1h" — usar "60m" (ver docs / ccxt#17482)
-MEXC_INTERVAL_MAP = {
-    "1h": "60m",
-    "1H": "60m",
-}
-MEXC_KLINES_MAX_LIMIT = 500
-
-
 @dataclass(frozen=True)
 class TimeframeConfig:
     interval: str
@@ -109,42 +90,6 @@ def parse_timeframes() -> list[TimeframeConfig]:
             raise ValueError(f"Timeframe desconhecido: {key}. Use: 1h, 4h, 1d")
         configs.append(TIMEFRAME_PRESETS[key])
     return configs
-
-
-def mexc_interval(interval: str) -> str:
-    return MEXC_INTERVAL_MAP.get(interval, interval)
-
-
-def fetch_mexc_klines(symbol: str, interval: str, limit: int) -> pd.DataFrame:
-    api_interval = mexc_interval(interval)
-    safe_limit = min(max(int(limit), 1), MEXC_KLINES_MAX_LIMIT)
-    resp = requests.get(
-        f"{MEXC_BASE}/api/v3/klines",
-        params={"symbol": symbol, "interval": api_interval, "limit": safe_limit},
-        timeout=30,
-    )
-    if not resp.ok:
-        logger.error(
-            "MEXC klines %s interval=%s (api=%s) limit=%s: %s",
-            symbol, interval, api_interval, safe_limit, resp.text[:200],
-        )
-    resp.raise_for_status()
-    rows = resp.json()
-    if not rows:
-        raise ValueError(f"Sem candles para {symbol}")
-
-    df = pd.DataFrame(
-        rows,
-        columns=[
-            "open_time", "open", "high", "low", "close", "volume",
-            "close_time", "quote_volume",
-        ],
-    )
-    df["timestamps"] = pd.to_datetime(df["open_time"], unit="ms", utc=True)
-    for col in ("open", "high", "low", "close", "volume"):
-        df[col] = df[col].astype(float)
-    df["amount"] = df["quote_volume"].astype(float)
-    return df
 
 
 def future_timestamps(last_ts: pd.Timestamp, pred_len: int, interval: str) -> pd.Series:
@@ -223,7 +168,7 @@ def coherence_notes(results: list[dict], corrs: dict[str, float]) -> list[str]:
 
 def analyze_symbol(predictor, symbol: str, tf: TimeframeConfig) -> dict:
     need = tf.lookback + 5
-    df = fetch_mexc_klines(symbol, tf.interval, limit=min(need, MEXC_KLINES_MAX_LIMIT))
+    df = fetch_klines(symbol, tf.interval, limit=min(need, MEXC_KLINES_MAX_LIMIT))
 
     if len(df) < tf.lookback + 1:
         raise ValueError(f"{symbol}@{tf.interval}: candles insuficientes ({len(df)} < {tf.lookback})")
@@ -436,6 +381,7 @@ def run() -> None:
     predictor = load_predictor()
     now = datetime.now(timezone.utc)
     stamp = now.strftime("%Y%m%d_%H%M")
+    run_id = new_run_id()
     summary_sections: list[str] = []
     all_errors: list[str] = []
 
@@ -452,6 +398,10 @@ def run() -> None:
                 tf_errors.append(f"{symbol}@{tf.interval}: {exc}")
 
         if results:
+            log_predictions(
+                run_id, now, tf.label, tf.interval,
+                results[0]["short_bars"], results[0]["pred_len"], results,
+            )
             summary_sections.append(format_timeframe_summary(tf.label, results, now))
             chart_path = CHART_DIR / f"kronos_{tf.interval}_{stamp}.png"
             try:
@@ -479,6 +429,9 @@ def run() -> None:
     )
     if all_errors:
         body += "\n\n⚠️ Erros:\n" + "\n".join(all_errors[:10])
+
+    body += f"\n\n{format_scorecard_brief(7)}"
+    body += f"\n<i>Run ID: {run_id} — catalogado em /data/crypto_monitor.db</i>"
 
     send_kronos_alert(title, body)
     logger.info("Relatório [KRONOS] enviado (%d timeframes)", len(summary_sections))

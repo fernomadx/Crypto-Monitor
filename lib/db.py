@@ -7,6 +7,7 @@ Tabelas:
     portfolio          — saldo MEXC + posições Hyperliquid
     news_articles      — artigos com scores VADER e Haiku
     orchestrator_log   — sínteses do consensus (a cada 4h)
+    kronos_predictions — catálogo de previsões Kronos + scorecard
 
 Todos os timestamps são UTC ISO-8601.
 """
