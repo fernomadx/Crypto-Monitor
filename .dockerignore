@@ -1,0 +1,9 @@
+.git
+.github
+Kronos/
+vps/.venv/
+vps/charts/*.png
+data/
+*.md
+.env
+.env.*

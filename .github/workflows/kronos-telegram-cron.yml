@@ -8,6 +8,12 @@ on:
   schedule:
     - cron: "0 */4 * * *"
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "vps/**"
+      - "lib/telegram.py"
+      - ".github/workflows/kronos-telegram-cron.yml"
 
 concurrency:
   group: kronos-signal

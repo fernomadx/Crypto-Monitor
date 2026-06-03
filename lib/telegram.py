@@ -13,9 +13,15 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
-CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
-BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
+
+def _telegram_config() -> tuple[str, str, str]:
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+    if not token or not chat_id:
+        raise RuntimeError(
+            "TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID devem estar definidos (Railway Variables)."
+        )
+    return token, chat_id, f"https://api.telegram.org/bot{token}"
 
 
 def send(text: str, parse_mode: str = "HTML") -> bool:
@@ -25,10 +31,11 @@ def send(text: str, parse_mode: str = "HTML") -> bool:
     Nunca levanta exceção — falha silenciosa com log.
     """
     try:
+        _, chat_id, base_url = _telegram_config()
         resp = requests.post(
-            f"{BASE_URL}/sendMessage",
+            f"{base_url}/sendMessage",
             json={
-                "chat_id": CHAT_ID,
+                "chat_id": chat_id,
                 "text": text,
                 "parse_mode": parse_mode,
                 "disable_web_page_preview": True,
@@ -63,12 +70,13 @@ def send_kronos_alert(title: str, body: str) -> bool:
 def send_photo(path: str, caption: str = "", parse_mode: str = "HTML") -> bool:
     """Envia imagem ao chat (PNG/JPG). Caption até 1024 caracteres."""
     try:
+        _, chat_id, base_url = _telegram_config()
         caption = caption[:1024]
         with open(path, "rb") as photo_file:
             resp = requests.post(
-                f"{BASE_URL}/sendPhoto",
+                f"{base_url}/sendPhoto",
                 data={
-                    "chat_id": CHAT_ID,
+                    "chat_id": chat_id,
                     "caption": caption,
                     "parse_mode": parse_mode,
                 },

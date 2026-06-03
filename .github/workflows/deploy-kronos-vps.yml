@@ -2,48 +2,32 @@ name: Deploy Kronos to VPS
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - "vps/**"
-      - "lib/telegram.py"
-      - ".github/workflows/deploy-kronos-vps.yml"
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    if: ${{ secrets.VPS_HOST != '' && secrets.VPS_SSH_KEY != '' }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Deploy via SSH
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        if: env.VPS_HOST != ''
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
+          username: ${{ secrets.VPS_USER || 'root' }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT || 22 }}
           script: |
             set -e
             export REPO_DIR=/opt/crypto-monitor
             export KRONOS_DIR=/opt/Kronos
-            if [ ! -d "$REPO_DIR/.git" ]; then
-              sudo git clone https://github.com/fernomadx/Crypto-Monitor.git "$REPO_DIR"
-              sudo chown -R $USER:$USER "$REPO_DIR"
-            fi
-            cd "$REPO_DIR"
-            git fetch origin main && git checkout main && git pull origin main
-            if [ ! -f vps/.env ]; then
-              echo "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}" > vps/.env
-              echo "TELEGRAM_CHAT_ID=${{ secrets.TELEGRAM_CHAT_ID }}" >> vps/.env
-              echo "KRONOS_PATH=$KRONOS_DIR" >> vps/.env
-              echo "KRONOS_DEVICE=cpu" >> vps/.env
-              echo "KRONOS_TIMEFRAMES=1h,4h,1d" >> vps/.env
-            fi
+            git clone https://github.com/fernomadx/Crypto-Monitor.git "$REPO_DIR" 2>/dev/null || true
+            cd "$REPO_DIR" && git pull origin main
             sudo bash vps/install.sh
 
-      - name: Secrets missing — skip
-        if: ${{ secrets.VPS_HOST == '' || secrets.VPS_SSH_KEY == '' }}
+      - name: VPS secrets missing
+        if: ${{ secrets.VPS_HOST == '' }}
         run: |
-          echo "Configure GitHub secrets: VPS_HOST, VPS_USER, VPS_SSH_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID"
-          echo "Ou rode na VPS: sudo bash /opt/crypto-monitor/vps/install.sh"
+          echo "VPS_HOST não configurado. Kronos já roda no crypto-monitor (Railway) após redeploy."

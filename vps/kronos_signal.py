@@ -291,10 +291,12 @@ def load_predictor():
 
 
 def run() -> None:
-    if not os.environ.get("TELEGRAM_BOT_TOKEN") or not os.environ.get("TELEGRAM_CHAT_ID"):
-        raise RuntimeError("Defina TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID")
-
     symbols = resolve_mexc_symbols()
+    send_kronos_alert(
+        "Processando",
+        f"Gerando previsões para: <code>{', '.join(symbols)}</code>\n"
+        f"Timeframes: <code>{KRONOS_TIMEFRAMES}</code>",
+    )
     timeframes = parse_timeframes()
     if not symbols or not timeframes:
         raise RuntimeError("KRONOS_TICKERS ou KRONOS_TIMEFRAMES vazio")
