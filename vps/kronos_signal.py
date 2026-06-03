@@ -70,9 +70,17 @@ INTERVAL_DELTAS = {
     "15m": timedelta(minutes=15),
     "30m": timedelta(minutes=30),
     "1h": timedelta(hours=1),
+    "60m": timedelta(hours=1),
     "4h": timedelta(hours=4),
     "1d": timedelta(days=1),
 }
+
+# MEXC Spot v3 não aceita "1h" — usar "60m" (ver docs / ccxt#17482)
+MEXC_INTERVAL_MAP = {
+    "1h": "60m",
+    "1H": "60m",
+}
+MEXC_KLINES_MAX_LIMIT = 500
 
 
 @dataclass(frozen=True)
@@ -85,7 +93,7 @@ class TimeframeConfig:
 
 
 TIMEFRAME_PRESETS: dict[str, TimeframeConfig] = {
-    "1h": TimeframeConfig("1h", "1H", lookback=300, pred_len=24, chart_bars=72),
+    "1h": TimeframeConfig("1h", "1H", lookback=250, pred_len=24, chart_bars=72),
     "4h": TimeframeConfig("4h", "4H", lookback=200, pred_len=18, chart_bars=48),
     "1d": TimeframeConfig("1d", "Diário", lookback=120, pred_len=14, chart_bars=60),
 }
@@ -101,12 +109,23 @@ def parse_timeframes() -> list[TimeframeConfig]:
     return configs
 
 
+def mexc_interval(interval: str) -> str:
+    return MEXC_INTERVAL_MAP.get(interval, interval)
+
+
 def fetch_mexc_klines(symbol: str, interval: str, limit: int) -> pd.DataFrame:
+    api_interval = mexc_interval(interval)
+    safe_limit = min(max(int(limit), 1), MEXC_KLINES_MAX_LIMIT)
     resp = requests.get(
         f"{MEXC_BASE}/api/v3/klines",
-        params={"symbol": symbol, "interval": interval, "limit": limit},
+        params={"symbol": symbol, "interval": api_interval, "limit": safe_limit},
         timeout=30,
     )
+    if not resp.ok:
+        logger.error(
+            "MEXC klines %s interval=%s (api=%s) limit=%s: %s",
+            symbol, interval, api_interval, safe_limit, resp.text[:200],
+        )
     resp.raise_for_status()
     rows = resp.json()
     if not rows:
@@ -143,7 +162,7 @@ def bias_from_pct(pct: float) -> tuple[str, str]:
 
 def analyze_symbol(predictor, symbol: str, tf: TimeframeConfig) -> dict:
     need = tf.lookback + 5
-    df = fetch_mexc_klines(symbol, tf.interval, limit=min(need, 1000))
+    df = fetch_mexc_klines(symbol, tf.interval, limit=min(need, MEXC_KLINES_MAX_LIMIT))
 
     if len(df) < tf.lookback + 1:
         raise ValueError(f"{symbol}@{tf.interval}: candles insuficientes ({len(df)} < {tf.lookback})")
@@ -219,7 +238,7 @@ def render_timeframe_chart(analyses: list[dict], tf_label: str, out_path: Path) 
     if n == 1:
         axes = [axes]
 
-    for ax, item in analyses:
+    for ax, item in zip(axes, analyses):
         ax.set_facecolor("#1e293b")
         hist = item["chart_hist"]
         pred = item["pred_df"].copy()
