@@ -1,5 +1,5 @@
-# crypto-monitor supercronic crontab
-# Formato: minuto hora dia mês diasemana comando
+# crypto-monitor (Railway) — sem Kronos
+# Kronos: Hetzner BTCCURSOR — vps/BTCCURSOR.md
 
 # Hyperliquid: funding rates + posições (a cada 15 min)
 */15 * * * * python /app/agents/hyperliquid.py
@@ -15,14 +15,3 @@
 
 # Consensus orchestrator (a cada 4h, na hora cheia)
 0 */4 * * * python /app/agents/orchestrator.py
-
-# Kronos: previsão + gráficos → Telegram [KRONOS] (a cada 2h — mais amostras no DB de performance)
-15 */2 * * * python /app/vps/kronos_signal.py >> /data/kronos.log 2>&1
-
-# Kronos scorecard: avalia previsões maduras (a cada 2h, +15min do signal)
-30 */2 * * * python /app/vps/kronos_scorecard.py >> /data/kronos_scorecard.log 2>&1
-# Relatório completo semanal (domingo 12:30 UTC)
-30 12 * * 0 python /app/vps/kronos_scorecard.py --weekly >> /data/kronos_scorecard.log 2>&1
-
-# Kronos: relatório diário no Telegram — 12:00 horário de Brasília (15:00 UTC)
-0 15 * * * python /app/vps/kronos_daily_report.py >> /data/kronos_daily_report.log 2>&1
