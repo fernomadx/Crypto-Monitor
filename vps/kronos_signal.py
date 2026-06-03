@@ -31,6 +31,7 @@ sys.path.insert(0, str(REPO_ROOT))
 KRONOS_ROOT = Path(os.environ.get("KRONOS_PATH", REPO_ROOT / "Kronos"))
 sys.path.insert(0, str(KRONOS_ROOT))
 
+from lib.kronos_levels import compute_trade_levels  # noqa: E402
 from lib.kronos_tracker import format_scorecard_brief, log_predictions, new_run_id  # noqa: E402
 from lib.mexc_klines import INTERVAL_DELTAS, MEXC_KLINES_MAX_LIMIT, fetch_klines  # noqa: E402
 from lib.telegram import send_kronos_alert, send_kronos_photo  # noqa: E402
@@ -63,8 +64,9 @@ KRONOS_TIMEFRAMES = os.environ.get("KRONOS_TIMEFRAMES", "1h,4h,1d")
 KRONOS_SAMPLE_COUNT = int(os.environ.get("KRONOS_SAMPLE_COUNT", "4"))
 KRONOS_TEMPERATURE = float(os.environ.get("KRONOS_TEMPERATURE", "0.85"))
 KRONOS_TOP_P = float(os.environ.get("KRONOS_TOP_P", "0.9"))
-# Barras usadas para "viés curto" (evita exageros do fim do horizonte longo)
-KRONOS_SHORT_BARS = int(os.environ.get("KRONOS_SHORT_BARS", "4"))
+# Viés = poucas barras; alvo de trade = mais barras (evita alvo minúsculo)
+KRONOS_BIAS_BARS = int(os.environ.get("KRONOS_BIAS_BARS", os.environ.get("KRONOS_SHORT_BARS", "4")))
+KRONOS_TARGET_BARS = int(os.environ.get("KRONOS_TARGET_BARS", "8"))
 
 @dataclass(frozen=True)
 class TimeframeConfig:
@@ -73,6 +75,13 @@ class TimeframeConfig:
     lookback: int
     pred_len: int
     chart_bars: int
+
+
+def _target_bars_for(tf_key: str, pred_len: int) -> int:
+    """Barras do alvo por timeframe (sobrescreve KRONOS_TARGET_BARS se definido por TF)."""
+    defaults = {"1h": 8, "4h": 6, "1d": 4}
+    base = int(os.environ.get(f"KRONOS_TARGET_BARS_{tf_key.upper()}", defaults.get(tf_key, KRONOS_TARGET_BARS)))
+    return min(max(base, 2), pred_len)
 
 
 TIMEFRAME_PRESETS: dict[str, TimeframeConfig] = {
@@ -191,12 +200,20 @@ def analyze_symbol(predictor, symbol: str, tf: TimeframeConfig) -> dict:
         verbose=False,
     )
 
-    short_idx = min(KRONOS_SHORT_BARS - 1, len(pred_df) - 1)
-    pred_close_short = float(pred_df["close"].iloc[short_idx])
-    pred_close_long = float(pred_df["close"].iloc[-1])
-    pct_short = pct_change_to_bar(pred_df, last_close, short_idx)
+    bias_idx = min(KRONOS_BIAS_BARS - 1, len(pred_df) - 1)
+    target_idx = min(_target_bars_for(tf.interval, tf.pred_len) - 1, len(pred_df) - 1)
+    pct_short = pct_change_to_bar(pred_df, last_close, bias_idx)
     pct_long = pct_change_to_bar(pred_df, last_close, len(pred_df) - 1)
     bias, icon = bias_from_pct(pct_short)
+
+    levels = compute_trade_levels(
+        entry=last_close,
+        pred_df=pred_df,
+        bias=bias,
+        target_bar_index=target_idx,
+    )
+    pred_close_short = levels.target if levels else float(pred_df["close"].iloc[target_idx])
+    pred_close_long = float(pred_df["close"].iloc[-1])
     ticker = symbol.replace("USDT", "")
 
     chart_hist = hist.iloc[-tf.chart_bars:][["timestamps", "open", "high", "low", "close"]].copy()
@@ -215,13 +232,18 @@ def analyze_symbol(predictor, symbol: str, tf: TimeframeConfig) -> dict:
         "candle_time": candle_ts,
         "pred_close": pred_close_short,
         "pred_close_long": pred_close_long,
+        "stop_price": levels.stop if levels else last_close,
+        "target_pct": levels.target_pct if levels else pct_change_to_bar(pred_df, last_close, target_idx),
+        "stop_pct": levels.stop_pct if levels else 0.0,
+        "trade_rr": levels.rr if levels else 0.0,
         "pct": pct_long,
         "pct_short": pct_short,
         "pct_long": pct_long,
         "bias": bias,
         "icon": icon,
         "pred_len": tf.pred_len,
-        "short_bars": short_idx + 1,
+        "short_bars": (levels.target_bars if levels else target_idx + 1),
+        "bias_bars": bias_idx + 1,
         "chart_hist": chart_hist,
         "pred_df": pred_df,
         "split_ts": last_ts,
@@ -273,7 +295,7 @@ def render_timeframe_chart(analyses: list[dict], tf_label: str, out_path: Path) 
         ax.set_title(
             f"{item['ticker']} {item['icon']} {item['bias']}  |  "
             f"Base ${item['last_close']:,.2f}  →  Alvo ${item['pred_close']:,.2f} "
-            f"({sign}{item['pct_short']:.2f}%)",
+            f"({sign}{item.get('target_pct', item['pct_short']):.2f}%)",
             color="white",
             fontsize=11,
             pad=8,
@@ -313,11 +335,12 @@ def _fmt_ts(ts: pd.Timestamp) -> str:
 
 def format_timeframe_summary(tf_label: str, results: list[dict], analysis_time: datetime) -> str:
     pred_len = results[0]["pred_len"]
-    short_bars = results[0]["short_bars"]
+    target_bars = results[0]["short_bars"]
+    bias_bars = results[0].get("bias_bars", KRONOS_BIAS_BARS)
     lines = [
         f"<b>━━ {tf_label} ━━</b>",
         f"🕐 Análise gerada: <b>{analysis_time.strftime('%d/%m/%Y %H:%M UTC')}</b>",
-        f"<i>Viés = {short_bars} barras | Horizonte máx. = {pred_len} barras</i>",
+        f"<i>Viés = {bias_bars} barras | Alvo trade = {target_bars} barras | Máx. = {pred_len} barras</i>",
         "",
     ]
     corrs = hist_return_correlation(results)
@@ -328,15 +351,21 @@ def format_timeframe_summary(tf_label: str, results: list[dict], analysis_time: 
         if r["ticker"] != "BTC" and r["ticker"] in corrs:
             corr_txt = f" (corr. BTC {corrs[r['ticker']]:.2f})"
         now_p = _fmt_price(r["last_close"])
-        tgt_short = _fmt_price(r["pred_close"])
+        tgt = _fmt_price(r["pred_close"])
         tgt_long = _fmt_price(r["pred_close_long"])
+        stp = _fmt_price(r.get("stop_price", r["last_close"]))
+        tp = r.get("target_pct", r["pct_short"])
+        sp = r.get("stop_pct", 0.0)
+        rr = r.get("trade_rr", 0.0)
         candle = _fmt_ts(r["candle_time"])
         lines.append(
             f"{r['icon']} <b>{r['ticker']}</b> — {r['bias']}{corr_txt}\n"
             f"  📍 <b>Preço base:</b> {now_p}\n"
             f"     <i>último candle MEXC: {candle}</i>\n"
-            f"  🎯 <b>Alvo curto</b> ({short_bars} barras): {tgt_short} ({ss}{r['pct_short']:.2f}%)\n"
-            f"  🎯 <b>Alvo longo</b> ({pred_len} barras): {tgt_long} ({sl}{r['pct_long']:.2f}%)"
+            f"  🎯 <b>Alvo</b> ({target_bars} barras): {tgt} ({'+' if tp >= 0 else ''}{tp:.2f}%)\n"
+            f"  🛑 <b>Stop</b> (R:R {rr:.1f}): {stp} ({sp:+.2f}%)\n"
+            f"  📐 Viés curto ({bias_bars}b): {ss}{r['pct_short']:.2f}% · "
+            f"ref. longo ({pred_len}b): {tgt_long} ({sl}{r['pct_long']:.2f}%)"
         )
     for note in coherence_notes(results, corrs):
         lines.append("")
@@ -423,8 +452,9 @@ def run() -> None:
     title = f"Previsão — {now.strftime('%d/%m/%Y %H:%M UTC')}"
     body = format_full_report(summary_sections)
     body = (
-        f"📍 <b>Referência:</b> preço base = último candle fechado na MEXC (ordem limite de entrada simulada).\n"
-        f"🎯 <b>Alvo:</b> close previsto no horizonte curto (ordem limite de saída no scorecard).\n\n"
+        f"📍 <b>Referência:</b> preço base = último candle MEXC (entrada limite simulada).\n"
+        f"🎯 <b>Alvo / 🛑 Stop:</b> previsto em mais barras, com R:R mínimo "
+        f"(stop menor que o alvo em distância %).\n\n"
         + body
     )
     if all_errors:

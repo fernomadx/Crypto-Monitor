@@ -80,7 +80,8 @@ def init_kronos_tables() -> None:
                 entry_fill_price_short REAL,
                 exit_fill_price_short  REAL,
                 fee_usdc_short      REAL,
-                exit_type_short     TEXT
+                exit_type_short     TEXT,
+                stop_price_short    REAL
             );
 
             CREATE INDEX IF NOT EXISTS idx_kronos_pred_due_short
@@ -105,6 +106,7 @@ def _migrate_columns(conn) -> None:
         ("exit_fill_price_short", "REAL"),
         ("fee_usdc_short", "REAL"),
         ("exit_type_short", "TEXT"),
+        ("stop_price_short", "REAL"),
     ]
     for name, typ in additions:
         if name not in existing:
@@ -150,15 +152,22 @@ def _limit_exit_fill(bars: list[dict], limit_price: float, side: str) -> tuple[b
     return False, None
 
 
+def _stop_hit(bar: dict, stop: float, side: str) -> bool:
+    if side == "long":
+        return float(bar["low"]) <= stop
+    return float(bar["high"]) >= stop
+
+
 def simulate_limit_trade(
     *,
     bias: str,
     price_base: float,
     target: float,
+    stop: float | None,
     bars_after_signal: list[dict],
     due_close: float,
 ) -> dict:
-    """Entrada limite no preço base; saída limite no alvo; senão taker no vencimento."""
+    """Entrada limite no base; saída no alvo limite, stop limite, ou taker no vencimento."""
     if bias == "NEUTRO" or not bars_after_signal:
         return {
             "entry_filled": False,
@@ -193,14 +202,30 @@ def simulate_limit_trade(
     if LIMIT_EXIT_BARS > 0:
         exit_bars = exit_bars[:LIMIT_EXIT_BARS]
 
-    exit_ok, exit_px = _limit_exit_fill(exit_bars, target, side)
-    if exit_ok and exit_px is not None:
-        exit_type = "limit_target"
-        fee_exit = _fee_usdc(notional, FEE_MAKER_PCT)
-    else:
-        exit_type = "market_due"
+    exit_px = None
+    exit_type = "market_due"
+    for bar in exit_bars:
+        if stop is not None and _stop_hit(bar, stop, side):
+            exit_px = stop
+            exit_type = "stop_loss"
+            break
+        if side == "long" and float(bar["high"]) >= target:
+            exit_px = target
+            exit_type = "limit_target"
+            break
+        if side == "short" and float(bar["low"]) <= target:
+            exit_px = target
+            exit_type = "limit_target"
+            break
+
+    if exit_px is None:
         exit_px = due_close
-        fee_exit = _fee_usdc(notional, FEE_TAKER_PCT)
+        exit_type = "market_due"
+
+    fee_exit = _fee_usdc(
+        notional,
+        FEE_MAKER_PCT if exit_type == "limit_target" else FEE_TAKER_PCT,
+    )
 
     if side == "long":
         gross_pct = (exit_px - entry_px) / entry_px * 100.0
@@ -234,8 +259,15 @@ def simulate_limit_trade(
     }
 
 
-def log_predictions(run_id: str, analysis_time: datetime, tf_label: str, interval: str,
-                    short_bars: int, pred_len: int, results: list[dict]) -> int:
+def log_predictions(
+    run_id: str,
+    analysis_time: datetime,
+    tf_label: str,
+    interval: str,
+    short_bars: int,
+    pred_len: int,
+    results: list[dict],
+) -> int:
     init_kronos_tables()
     n = 0
     with get_conn() as conn:
@@ -248,8 +280,8 @@ def log_predictions(run_id: str, analysis_time: datetime, tf_label: str, interva
                     run_id, created_at, ticker, symbol, timeframe, interval,
                     candle_time, price_base, target_short, target_long,
                     pct_short, pct_long, bias, short_bars, pred_len,
-                    due_short, due_long, position_usdc, order_type
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    due_short, due_long, position_usdc, order_type, stop_price_short
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     run_id,
                     _iso(analysis_time),
@@ -270,6 +302,7 @@ def log_predictions(run_id: str, analysis_time: datetime, tf_label: str, interva
                     _iso(due_long),
                     MARGIN_USDC,
                     "limit",
+                    r.get("stop_price"),
                 ),
             )
             n += 1
@@ -323,10 +356,17 @@ def _score_row_short_limit(conn, row: dict, now: str) -> dict | None:
     candle_ms = int(candle.timestamp() * 1000)
     bars_after = [b for b in bars if b["ts"] > candle_ms]
 
+    stop = row.get("stop_price_short")
+    if stop is None:
+        from lib.kronos_levels import compute_stop_from_target
+
+        stop = compute_stop_from_target(base, float(row["target_short"]), row["bias"])
+
     sim = simulate_limit_trade(
         bias=row["bias"],
         price_base=base,
-        target=row["target_short"],
+        target=float(row["target_short"] or base),
+        stop=float(stop) if stop else None,
         bars_after_signal=bars_after,
         due_close=float(actual),
     )
@@ -595,7 +635,13 @@ def format_trade_result(r: dict) -> str:
     label = res.upper()
     created = r.get("created_at", "")[:16].replace("T", " ")
     fee = float(r.get("fee_usdc") or 0)
-    exit_lbl = "limite no alvo" if r.get("exit_type") == "limit_target" else "fech. vencimento (taker)"
+    exit_type = r.get("exit_type")
+    if exit_type == "limit_target":
+        exit_lbl = "limite no alvo"
+    elif exit_type == "stop_loss":
+        exit_lbl = "stop"
+    else:
+        exit_lbl = "fech. vencimento (taker)"
     entry_px = r.get("entry_fill_price") or r["price_base"]
     exit_px = r.get("exit_fill_price") or r["actual"]
 
