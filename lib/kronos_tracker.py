@@ -609,6 +609,106 @@ def _aggregate_stats(days: int | None = None, horizon: str = "short") -> dict:
     }
 
 
+def get_timeframe_ranking(days: int | None = 30) -> list[dict]:
+    """Ranking de acerto/PnL por timeframe (1H, 4H, Diário)."""
+    init_kronos_tables()
+    window = f"-{days} days" if days else None
+    with get_conn() as conn:
+        if window:
+            rows = conn.execute(
+                """SELECT timeframe, result_short, pnl_usdc_short, direction_hit_short
+                   FROM kronos_predictions
+                   WHERE scored_short_at IS NOT NULL AND result_short IN ('gain','loss','flat')
+                     AND created_at >= datetime('now', ?)
+                   ORDER BY timeframe""",
+                (window,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """SELECT timeframe, result_short, pnl_usdc_short, direction_hit_short
+                   FROM kronos_predictions
+                   WHERE scored_short_at IS NOT NULL AND result_short IN ('gain','loss','flat')
+                   ORDER BY timeframe"""
+            ).fetchall()
+
+    by_tf: dict[str, dict] = {}
+    for tf, res, pnl, hit in rows:
+        st = by_tf.setdefault(
+            tf,
+            {"timeframe": tf, "n": 0, "gains": 0, "pnl": 0.0, "dir_hits": 0, "dir_n": 0},
+        )
+        st["n"] += 1
+        if res == "gain":
+            st["gains"] += 1
+        if pnl is not None:
+            st["pnl"] += float(pnl)
+        if hit is not None:
+            st["dir_n"] += 1
+            st["dir_hits"] += int(hit)
+
+    ranked = []
+    for st in by_tf.values():
+        n = st["n"]
+        st["win_rate_pnl_pct"] = round(100 * st["gains"] / n, 1) if n else 0.0
+        st["accuracy_pct"] = round(100 * st["dir_hits"] / st["dir_n"], 1) if st["dir_n"] else 0.0
+        st["pnl"] = round(st["pnl"], 2)
+        ranked.append(st)
+
+    ranked.sort(key=lambda x: (-x["win_rate_pnl_pct"], -x["pnl"]))
+    return ranked
+
+
+def format_daily_report_telegram() -> str:
+    """Relatório diário: resumo 7d/30d + ranking por timeframe."""
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
+    s7 = _aggregate_stats(7)
+    s30 = _aggregate_stats(30)
+    rank30 = get_timeframe_ranking(30)
+    rank7 = get_timeframe_ranking(7)
+    pending = _count_pending("short")
+
+    lines = [
+        f"<b>📊 Relatório diário Kronos</b>",
+        f"🕐 {now}",
+        f"Pendentes aguardando vencimento: <b>{pending}</b>",
+        "",
+        format_scorecard_block("Últimos 7 dias", s7),
+        "",
+        format_scorecard_block("Últimos 30 dias", s30),
+        "",
+        "<b>🏆 Ranking por timeframe (7 dias)</b>",
+    ]
+
+    if rank7:
+        for i, st in enumerate(rank7, 1):
+            medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else "▫️"
+            lines.append(
+                f"{medal} <b>{st['timeframe']}</b>: {st['win_rate_pnl_pct']}% acerto PnL "
+                f"({st['gains']}/{st['n']}) · dir. {st['accuracy_pct']}% · "
+                f"PnL <b>${st['pnl']:+.2f}</b>"
+            )
+        lines.append(f"\n<i>Melhor TF (7d): <b>{rank7[0]['timeframe']}</b></i>")
+    else:
+        lines.append("<i>Sem trades fechados nos últimos 7 dias.</i>")
+
+    lines.append("\n<b>🏆 Ranking por timeframe (30 dias)</b>")
+    if rank30:
+        for i, st in enumerate(rank30, 1):
+            medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else "▫️"
+            lines.append(
+                f"{medal} <b>{st['timeframe']}</b>: {st['win_rate_pnl_pct']}% acerto PnL "
+                f"({st['gains']}/{st['n']}) · dir. {st['accuracy_pct']}% · "
+                f"PnL <b>${st['pnl']:+.2f}</b>"
+            )
+        lines.append(f"\n<i>Melhor TF (30d): <b>{rank30[0]['timeframe']}</b></i>")
+    else:
+        lines.append("<i>Sem trades fechados nos últimos 30 dias.</i>")
+
+    return "\n".join(lines)
+
+
 def _count_pending(horizon: str) -> int:
     col = "scored_short_at" if horizon == "short" else "scored_long_at"
     with get_conn() as conn:
