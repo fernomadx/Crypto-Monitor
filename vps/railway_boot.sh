@@ -3,6 +3,14 @@
 echo "Kronos boot: aguardando 45s (rede + volume)..."
 sleep 45
 
+# Reset manual único (NÃO é cron): crie /data/kronos.do_reset no Shell OU
+# defina KRONOS_RESET_CATALOG_ONCE=1 nas Variables e remova após 1 deploy.
+if [ -f /data/kronos.do_reset ] || [ "$KRONOS_RESET_CATALOG_ONCE" = "1" ]; then
+  echo "Kronos boot: reset catálogo solicitado..."
+  python /app/vps/kronos_reset_catalog.py --confirm >> /data/kronos.log 2>&1 || true
+  rm -f /data/kronos.do_reset
+fi
+
 python - <<'PY' || true
 import os, sys
 sys.path.insert(0, "/app")
