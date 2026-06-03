@@ -1,8 +1,8 @@
 """
 Catálogo e scorecard das previsões Kronos (SQLite /data).
 
-Simulação: capital 1000 USDC, 100 USDC por trade, ordens LIMITE na MEXC
-com taxas maker (fill limite) e taker (fechamento no vencimento).
+Simulação: capital 1000 USDC, margem 100 USDC × alavancagem (padrão 20x),
+ordens LIMITE na MEXC com taxas sobre nocional (maker/taker).
 """
 
 from __future__ import annotations
@@ -21,8 +21,15 @@ logger = logging.getLogger(__name__)
 
 NEUTRAL_THRESHOLD_PCT = 0.15
 INITIAL_CAPITAL_USDC = float(os.environ.get("KRONOS_INITIAL_CAPITAL", "1000"))
-POSITION_USDC = float(os.environ.get("KRONOS_POSITION_USDC", "100"))
+MARGIN_USDC = float(os.environ.get("KRONOS_POSITION_USDC", "100"))
+LEVERAGE = max(1.0, float(os.environ.get("KRONOS_LEVERAGE", "20")))
+POSITION_USDC = MARGIN_USDC  # alias: margem por entrada
 PNL_FLAT_THRESHOLD_USDC = float(os.environ.get("KRONOS_FLAT_THRESHOLD_USDC", "0.05"))
+
+
+def notional_usdc() -> float:
+    """Exposição nocional = margem × alavancagem."""
+    return MARGIN_USDC * LEVERAGE
 
 FEE_MAKER_PCT = float(os.environ.get("KRONOS_FEE_MAKER_PCT", "0.02"))
 FEE_TAKER_PCT = float(os.environ.get("KRONOS_FEE_TAKER_PCT", "0.05"))
@@ -180,7 +187,8 @@ def simulate_limit_trade(
             "exit_type": "entry_timeout",
         }
 
-    fee_entry = _fee_usdc(POSITION_USDC, FEE_MAKER_PCT)
+    notional = notional_usdc()
+    fee_entry = _fee_usdc(notional, FEE_MAKER_PCT)
     exit_bars = bars_after_signal[entry_idx + 1 :]
     if LIMIT_EXIT_BARS > 0:
         exit_bars = exit_bars[:LIMIT_EXIT_BARS]
@@ -188,11 +196,11 @@ def simulate_limit_trade(
     exit_ok, exit_px = _limit_exit_fill(exit_bars, target, side)
     if exit_ok and exit_px is not None:
         exit_type = "limit_target"
-        fee_exit = _fee_usdc(POSITION_USDC, FEE_MAKER_PCT)
+        fee_exit = _fee_usdc(notional, FEE_MAKER_PCT)
     else:
         exit_type = "market_due"
         exit_px = due_close
-        fee_exit = _fee_usdc(POSITION_USDC, FEE_TAKER_PCT)
+        fee_exit = _fee_usdc(notional, FEE_TAKER_PCT)
 
     if side == "long":
         gross_pct = (exit_px - entry_px) / entry_px * 100.0
@@ -200,9 +208,12 @@ def simulate_limit_trade(
         gross_pct = (entry_px - exit_px) / entry_px * 100.0
 
     total_fee = fee_entry + fee_exit
-    gross_pnl = POSITION_USDC * (gross_pct / 100.0)
+    gross_pnl = notional * (gross_pct / 100.0)
     net_pnl = gross_pnl - total_fee
-    net_pct = (net_pnl / POSITION_USDC) * 100.0
+    # Liquidação: perda máxima = margem (100% da margem)
+    if net_pnl < -MARGIN_USDC:
+        net_pnl = -MARGIN_USDC
+    net_pct = (net_pnl / MARGIN_USDC) * 100.0
 
     if net_pnl > PNL_FLAT_THRESHOLD_USDC:
         result = "gain"
@@ -257,7 +268,7 @@ def log_predictions(run_id: str, analysis_time: datetime, tf_label: str, interva
                     pred_len,
                     _iso(due_short),
                     _iso(due_long),
-                    POSITION_USDC,
+                    MARGIN_USDC,
                     "limit",
                 ),
             )
@@ -376,7 +387,8 @@ def _score_row_long_market(conn, row: dict, now: str) -> dict | None:
     actual_pct = (actual - base) / base * 100
     hit = _direction_hit(row["bias"], actual_pct)
     sim = _sim_return_market(row["bias"], actual_pct)
-    pnl = round(POSITION_USDC * sim / 100.0, 2)
+    raw_pnl = notional_usdc() * sim / 100.0
+    pnl = round(max(-MARGIN_USDC, raw_pnl), 2)
     result = _result_label(pnl)
     err = abs(row["pct_long"] - actual_pct)
 
@@ -494,7 +506,9 @@ def _aggregate_stats(days: int | None = None, horizon: str = "short") -> dict:
             "count": 0,
             "no_fill": no_fill,
             "initial_capital": INITIAL_CAPITAL_USDC,
-            "position_usdc": POSITION_USDC,
+            "position_usdc": MARGIN_USDC,
+            "leverage": LEVERAGE,
+            "notional_usdc": notional_usdc(),
             "pending_short": _count_pending("short"),
             "pending_long": _count_pending("long"),
         }
@@ -533,7 +547,9 @@ def _aggregate_stats(days: int | None = None, horizon: str = "short") -> dict:
         "no_fill": no_fill,
         "total_fees_usdc": round(fees, 2),
         "initial_capital": INITIAL_CAPITAL_USDC,
-        "position_usdc": POSITION_USDC,
+        "position_usdc": MARGIN_USDC,
+        "leverage": LEVERAGE,
+        "notional_usdc": notional_usdc(),
         "equity_end": equity_end,
         "total_pnl_usdc": total_pnl,
         "return_on_capital_pct": return_on_capital_pct,
@@ -585,9 +601,9 @@ def format_trade_result(r: dict) -> str:
 
     return (
         f"{icon} <b>{label}</b> {r['ticker']} {r['timeframe']} {r['bias']} · ordem limite\n"
-        f"   Entrada: ${POSITION_USDC:.0f} @ ${entry_px:,.2f} → saída ${exit_px:,.2f} ({exit_lbl})\n"
-        f"   Close vencimento: ${r['actual']:,.2f} ({r['actual_pct']:+.2f}%)\n"
-        f"   <b>PnL líq.: ${r['pnl_usdc']:+.2f}</b> ({r['sim_return']:+.2f}%) · taxas ${fee:.2f} · {created}"
+        f"   Margem ${MARGIN_USDC:.0f} × {LEVERAGE:.0f}x (${notional_usdc():.0f} nocional)\n"
+        f"   ${entry_px:,.2f} → ${exit_px:,.2f} ({exit_lbl}) · venc. ${r['actual']:,.2f}\n"
+        f"   <b>PnL líq.: ${r['pnl_usdc']:+.2f}</b> ({r['sim_return']:+.2f}% s/ margem) · taxas ${fee:.2f} · {created}"
     )
 
 
@@ -622,7 +638,8 @@ def format_scorecard_block(label: str, s: dict) -> str:
     fees = s.get("total_fees_usdc", 0)
 
     return "\n".join([
-        f"<b>{label}</b> — {s['count']} trades de ${pos:.0f} (capital ${cap:.0f})",
+        f"<b>{label}</b> — {s['count']} trades · margem ${pos:.0f} × {s.get('leverage', LEVERAGE):.0f}x "
+        f"(nocional ${s.get('notional_usdc', notional_usdc()):.0f}) · capital ${cap:.0f}",
         f"  🎯 Acerto (PnL líq.): <b>{s['win_rate_pnl_pct']}%</b> "
         f"({s['gains']} gain / {s['losses']} loss / {s['flats']} flat)",
         f"  ⏳ Sem fill entrada: {nf} · taxas totais: ${fees:.2f}",
@@ -640,8 +657,9 @@ def format_scorecard_telegram(new_trades: list[dict] | None = None) -> str:
     lines = [
         "<b>📊 Scorecard Kronos — simulação</b>",
         f"Capital <b>${INITIAL_CAPITAL_USDC:.0f}</b> · "
-        f"<b>${POSITION_USDC:.0f}</b> por trade · <b>ordens limite</b>",
-        f"Taxas MEXC: maker {FEE_MAKER_PCT}% · taker {FEE_TAKER_PCT}%",
+        f"margem <b>${MARGIN_USDC:.0f}</b> · <b>{LEVERAGE:.0f}x</b> "
+        f"(nocional ${notional_usdc():.0f}/trade) · limite",
+        f"Taxas MEXC sobre nocional: maker {FEE_MAKER_PCT}% · taker {FEE_TAKER_PCT}%",
         "",
     ]
 
@@ -659,7 +677,7 @@ def format_scorecard_telegram(new_trades: list[dict] | None = None) -> str:
         f"<i>Pendentes: {s7.get('pending_short', 0)} curto. "
         "Entrada limite no preço base (até "
         f"{LIMIT_ENTRY_BARS} barras); saída limite no alvo curto ou taker no vencimento. "
-        f"Posição ${POSITION_USDC:.0f} — sem alavancagem.</i>"
+        f"Margem ${MARGIN_USDC:.0f} com {LEVERAGE:.0f}x; perda máx. sim. = margem (liquidação).</i>"
     )
     return "\n".join(lines)
 
@@ -673,7 +691,7 @@ def format_scorecard_brief(days: int = 7) -> str:
     nf = s.get("no_fill", 0)
     nf_txt = f" · {nf} sem fill" if nf else ""
     return (
-        f"📊 <b>{days}d</b> {s['count']} trades ${s['position_usdc']:.0f} (limite+taxas){nf_txt}: "
+        f"📊 <b>{days}d</b> {s['count']} trades ${s['position_usdc']:.0f}×{s.get('leverage', LEVERAGE):.0f}x{nf_txt}: "
         f"<b>{s['win_rate_pnl_pct']}%</b> gain "
         f"({s['gains']}✅/{s['losses']}❌) · "
         f"PnL <b>${s['total_pnl_usdc']:+.2f}</b> "

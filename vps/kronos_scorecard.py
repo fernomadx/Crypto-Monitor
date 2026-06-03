@@ -35,7 +35,7 @@ def run(force_report: bool = False) -> None:
         pnl = sum(t["pnl_usdc"] for t in short_closed)
         title = f"Scorecard — {gains} gain / {losses} loss (${pnl:+.2f})"
     else:
-        title = "Scorecard semanal — 1000 USDC / 100 por trade"
+        title = "Scorecard semanal — $100 margem 20x"
     send_kronos_alert(title, body)
     logger.info("Scorecard enviado (%d fechadas, weekly=%s)", len(short_closed), weekly)
 
