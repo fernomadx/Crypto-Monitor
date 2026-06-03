@@ -138,17 +138,17 @@ O `docker-compose.yml` monta `./data` em `/data` para persistência local.
 
 Usa **automaticamente** o que já está no Railway: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TICKERS` (BTC, ETH, SOL → MEXC).
 
-### Opção A — Railway (recomendado, sem VPS)
+### Railway (automático no mesmo serviço)
 
-No **mesmo projeto** do crypto-monitor:
+O **`Dockerfile` principal** já inclui Kronos. Após cada deploy:
 
-1. **New Service** → mesmo repositório GitHub  
-2. **Settings** → Build → **Dockerfile Path:** `Dockerfile.kronos`  
-3. **Variables** → não precisa criar nada (herda as do projeto)  
-4. **Volume** (opcional): mount `/data` — cache do modelo Hugging Face  
-5. Deploy → em ~5 min chega o 1º alerta `[KRONOS]` + 3 gráficos (1H, 4H, Diário); depois **a cada 4h**
+1. Mensagem `[KRONOS] Serviço iniciado` no Telegram (~1 min)
+2. `[KRONOS] Processando...` e depois previsão + **3 gráficos** (15–40 min em CPU)
+3. Cron **a cada 4h** (minuto :15)
 
-Custo extra: ~$5/mês (2º serviço Hobby). O monitor principal continua leve.
+**Requisito:** aumente RAM do serviço para **≥2 GB** no Railway (Settings → Resources), senão o container pode reiniciar ao carregar o modelo.
+
+Serviço separado (`Dockerfile.kronos`) só se quiser isolar o custo/RAM.
 
 ### Opção B — VPS
 

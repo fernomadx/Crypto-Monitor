@@ -13,7 +13,7 @@ apt-get install -y -qq python3 python3-venv python3-pip git
 
 echo "==> Clone crypto-monitor (se ainda não existir)"
 if [ ! -d "$REPO_DIR/.git" ]; then
-  git clone "https://github.com/SEU_USUARIO/crypto-monitor.git" "$REPO_DIR" || true
+  git clone "https://github.com/fernomadx/Crypto-Monitor.git" "$REPO_DIR" || true
 fi
 
 echo "==> Clone Kronos"

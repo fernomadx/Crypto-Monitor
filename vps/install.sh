@@ -12,7 +12,7 @@ REPO_DIR="${REPO_DIR:-/opt/crypto-monitor}"
 KRONOS_DIR="${KRONOS_DIR:-/opt/Kronos}"
 REPO_URL="${REPO_URL:-https://github.com/fernomadx/Crypto-Monitor.git}"
 BRANCH="${BRANCH:-main}"
-CRON_SCHEDULE="${CRON_SCHEDULE:-0 */4 * * *}"
+CRON_SCHEDULE="${CRON_SCHEDULE:-15 * * * *}"
 LOG_FILE="${LOG_FILE:-/var/log/kronos_signal.log}"
 
 echo "=== Kronos VPS install ==="

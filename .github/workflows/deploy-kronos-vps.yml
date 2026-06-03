@@ -28,6 +28,8 @@ jobs:
             sudo bash vps/install.sh
 
       - name: VPS secrets missing
-        if: ${{ secrets.VPS_HOST == '' }}
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        if: env.VPS_HOST == ''
         run: |
           echo "VPS_HOST não configurado. Kronos já roda no crypto-monitor (Railway) após redeploy."
