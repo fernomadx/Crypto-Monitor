@@ -255,6 +255,11 @@ def analyze_symbol(predictor, symbol: str, tf: TimeframeConfig) -> dict:
     ticker = symbol.replace("USDT", "")
 
     chart_hist = hist.iloc[-tf.chart_bars:][["timestamps", "open", "high", "low", "close"]].copy()
+    candle_ts = pd.Timestamp(last_ts)
+    if candle_ts.tzinfo is None:
+        candle_ts = candle_ts.tz_localize("UTC")
+    else:
+        candle_ts = candle_ts.tz_convert("UTC")
 
     return {
         "ticker": ticker,
@@ -262,6 +267,7 @@ def analyze_symbol(predictor, symbol: str, tf: TimeframeConfig) -> dict:
         "timeframe": tf.label,
         "interval": tf.interval,
         "last_close": last_close,
+        "candle_time": candle_ts,
         "pred_close": pred_close_short,
         "pred_close_long": pred_close_long,
         "pct": pct_long,
@@ -320,9 +326,9 @@ def render_timeframe_chart(analyses: list[dict], tf_label: str, out_path: Path) 
 
         sign = "+" if item["pct_short"] >= 0 else ""
         ax.set_title(
-            f"{item['ticker']}  {item['icon']} {item['bias']}  "
-            f"${item['last_close']:,.2f} → ${item['pred_close']:,.2f} "
-            f"({sign}{item['pct_short']:.2f}% em {item['short_bars']} barras)",
+            f"{item['ticker']} {item['icon']} {item['bias']}  |  "
+            f"Base ${item['last_close']:,.2f}  →  Alvo ${item['pred_close']:,.2f} "
+            f"({sign}{item['pct_short']:.2f}%)",
             color="white",
             fontsize=11,
             pad=8,
@@ -348,12 +354,25 @@ def render_timeframe_chart(analyses: list[dict], tf_label: str, out_path: Path) 
     logger.info("Gráfico salvo: %s", out_path)
 
 
-def format_timeframe_summary(tf_label: str, results: list[dict]) -> str:
+def _fmt_price(value: float) -> str:
+    if value >= 1000:
+        return f"${value:,.2f}"
+    if value >= 1:
+        return f"${value:,.2f}"
+    return f"${value:.4f}"
+
+
+def _fmt_ts(ts: pd.Timestamp) -> str:
+    return ts.strftime("%d/%m/%Y %H:%M UTC")
+
+
+def format_timeframe_summary(tf_label: str, results: list[dict], analysis_time: datetime) -> str:
     pred_len = results[0]["pred_len"]
     short_bars = results[0]["short_bars"]
     lines = [
         f"<b>━━ {tf_label} ━━</b>",
-        f"<i>Viés = próximas {short_bars} barras | Horizonte total = {pred_len} barras</i>",
+        f"🕐 Análise gerada: <b>{analysis_time.strftime('%d/%m/%Y %H:%M UTC')}</b>",
+        f"<i>Viés = {short_bars} barras | Horizonte máx. = {pred_len} barras</i>",
         "",
     ]
     corrs = hist_return_correlation(results)
@@ -362,13 +381,17 @@ def format_timeframe_summary(tf_label: str, results: list[dict]) -> str:
         sl = "+" if r["pct_long"] >= 0 else ""
         corr_txt = ""
         if r["ticker"] != "BTC" and r["ticker"] in corrs:
-            corr_txt = f" | corr. BTC {corrs[r['ticker']]:.2f}"
+            corr_txt = f" (corr. BTC {corrs[r['ticker']]:.2f})"
+        now_p = _fmt_price(r["last_close"])
+        tgt_short = _fmt_price(r["pred_close"])
+        tgt_long = _fmt_price(r["pred_close_long"])
+        candle = _fmt_ts(r["candle_time"])
         lines.append(
-            f"{r['icon']} <b>{r['ticker']}</b> {r['bias']}{corr_txt}\n"
-            f"  Curto ({short_bars} barras): {ss}{r['pct_short']:.2f}% → "
-            f"${r['pred_close']:,.2f}\n"
-            f"  Longo ({pred_len} barras): {sl}{r['pct_long']:.2f}% → "
-            f"${r['pred_close_long']:,.2f}"
+            f"{r['icon']} <b>{r['ticker']}</b> — {r['bias']}{corr_txt}\n"
+            f"  📍 <b>Preço base:</b> {now_p}\n"
+            f"     <i>último candle MEXC: {candle}</i>\n"
+            f"  🎯 <b>Alvo curto</b> ({short_bars} barras): {tgt_short} ({ss}{r['pct_short']:.2f}%)\n"
+            f"  🎯 <b>Alvo longo</b> ({pred_len} barras): {tgt_long} ({sl}{r['pct_long']:.2f}%)"
         )
     for note in coherence_notes(results, corrs):
         lines.append("")
@@ -429,7 +452,7 @@ def run() -> None:
                 tf_errors.append(f"{symbol}@{tf.interval}: {exc}")
 
         if results:
-            summary_sections.append(format_timeframe_summary(tf.label, results))
+            summary_sections.append(format_timeframe_summary(tf.label, results, now))
             chart_path = CHART_DIR / f"kronos_{tf.interval}_{stamp}.png"
             try:
                 render_timeframe_chart(results, tf.label, chart_path)
@@ -447,8 +470,13 @@ def run() -> None:
         send_kronos_alert("Erro — sem previsões", "\n".join(all_errors) or "Falha desconhecida")
         return
 
-    title = f"Previsão multi-timeframe — {now.strftime('%Y-%m-%d %H:%M UTC')}"
+    title = f"Previsão — {now.strftime('%d/%m/%Y %H:%M UTC')}"
     body = format_full_report(summary_sections)
+    body = (
+        f"📍 <b>Referência:</b> preço base = último candle fechado na MEXC no momento da inferência.\n"
+        f"🎯 <b>Alvo:</b> close previsto pelo modelo no fim de cada horizonte.\n\n"
+        + body
+    )
     if all_errors:
         body += "\n\n⚠️ Erros:\n" + "\n".join(all_errors[:10])
 
