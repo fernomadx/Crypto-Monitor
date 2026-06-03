@@ -14,9 +14,9 @@ Lógica:
 import os
 import sys
 import logging
+from pathlib import Path
 
-# Garante que lib/ seja importável
-sys.path.insert(0, "/app")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import requests
 
