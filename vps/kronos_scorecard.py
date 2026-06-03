@@ -19,21 +19,25 @@ logger = logging.getLogger(__name__)
 
 
 def run(force_report: bool = False) -> None:
-    n = score_mature_predictions()
+    new_trades = score_mature_predictions()
+    short_closed = [t for t in new_trades if t.get("horizon") == "short"]
     now = datetime.now(timezone.utc)
     weekly = force_report or (now.weekday() == 6 and now.hour == 12)
 
-    if n == 0 and not weekly:
-        logger.info("Scorecard: %d novas avaliações — sem Telegram", n)
+    if not short_closed and not weekly:
+        logger.info("Scorecard: nada novo — sem Telegram")
         return
 
-    body = format_scorecard_telegram()
-    if n > 0:
-        title = f"Scorecard atualizado (+{n} avaliações)"
+    body = format_scorecard_telegram(new_trades=short_closed if short_closed else None)
+    if short_closed:
+        gains = sum(1 for t in short_closed if t["result"] == "gain")
+        losses = sum(1 for t in short_closed if t["result"] == "loss")
+        pnl = sum(t["pnl_usdc"] for t in short_closed)
+        title = f"Scorecard — {gains} gain / {losses} loss (${pnl:+.2f})"
     else:
-        title = "Scorecard semanal — acompanhamento"
+        title = "Scorecard semanal — 1000 USDC / 100 por trade"
     send_kronos_alert(title, body)
-    logger.info("Scorecard enviado (%d novas avaliações, weekly=%s)", n, weekly)
+    logger.info("Scorecard enviado (%d fechadas, weekly=%s)", len(short_closed), weekly)
 
 
 if __name__ == "__main__":
