@@ -134,17 +134,25 @@ O `docker-compose.yml` monta `./data` em `/data` para persistência local.
 
 ---
 
-## Kronos na VPS (alerta separado no Telegram)
+## Kronos — alerta `[KRONOS]` (mesmo bot, mesmas variáveis)
 
-O **Railway** continua leve (sem PyTorch). Na **VPS** (ex.: BTCCURSOR) rode o sinal Kronos e envie ao **mesmo bot**, com prefixo `📈 [KRONOS]`:
+Usa **automaticamente** o que já está no Railway: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TICKERS` (BTC, ETH, SOL → MEXC).
 
-```bash
-cd /opt/crypto-monitor
-cp vps/.env.example vps/.env   # mesmo TELEGRAM_BOT_TOKEN / CHAT_ID
-vps/.venv/bin/python vps/kronos_signal.py
-```
+### Opção A — Railway (recomendado, sem VPS)
 
-Guia completo: [`vps/README.md`](vps/README.md)
+No **mesmo projeto** do crypto-monitor:
+
+1. **New Service** → mesmo repositório GitHub  
+2. **Settings** → Build → **Dockerfile Path:** `Dockerfile.kronos`  
+3. **Variables** → não precisa criar nada (herda as do projeto)  
+4. **Volume** (opcional): mount `/data` — cache do modelo Hugging Face  
+5. Deploy → em ~5 min chega o 1º alerta `[KRONOS]` + 3 gráficos (1H, 4H, Diário); depois **a cada 4h**
+
+Custo extra: ~$5/mês (2º serviço Hobby). O monitor principal continua leve.
+
+### Opção B — VPS
+
+[`vps/README.md`](vps/README.md) + `sudo bash vps/install.sh`
 
 ## Estrutura de arquivos
 

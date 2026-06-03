@@ -43,7 +43,22 @@ CHART_DIR = Path(os.environ.get("KRONOS_CHART_DIR", REPO_ROOT / "vps" / "charts"
 KRONOS_MODEL = os.environ.get("KRONOS_MODEL", "NeoQuasar/Kronos-mini")
 KRONOS_TOKENIZER = os.environ.get("KRONOS_TOKENIZER", "NeoQuasar/Kronos-Tokenizer-2k")
 KRONOS_MAX_CONTEXT = int(os.environ.get("KRONOS_MAX_CONTEXT", "2048"))
-KRONOS_TICKERS = os.environ.get("KRONOS_TICKERS", "BTCUSDT,ETHUSDT,SOLUSDT")
+def resolve_mexc_symbols() -> list[str]:
+    """
+    Usa as mesmas moedas do crypto-monitor (TICKERS=BTC,ETH,SOL no Railway).
+    KRONOS_TICKERS opcional sobrescreve (ex.: BTCUSDT,ETHUSDT).
+    """
+    if os.environ.get("KRONOS_TICKERS"):
+        raw = os.environ["KRONOS_TICKERS"]
+    else:
+        raw = os.environ.get("TICKERS", "BTC,ETH,SOL")
+    symbols = []
+    for part in raw.split(","):
+        t = part.strip().upper()
+        if not t:
+            continue
+        symbols.append(t if t.endswith("USDT") else f"{t}USDT")
+    return symbols
 KRONOS_TIMEFRAMES = os.environ.get("KRONOS_TIMEFRAMES", "1h,4h,1d")
 KRONOS_SAMPLE_COUNT = int(os.environ.get("KRONOS_SAMPLE_COUNT", "4"))
 KRONOS_TEMPERATURE = float(os.environ.get("KRONOS_TEMPERATURE", "1.0"))
@@ -279,7 +294,7 @@ def run() -> None:
     if not os.environ.get("TELEGRAM_BOT_TOKEN") or not os.environ.get("TELEGRAM_CHAT_ID"):
         raise RuntimeError("Defina TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID")
 
-    symbols = [s.strip().upper() for s in KRONOS_TICKERS.split(",") if s.strip()]
+    symbols = resolve_mexc_symbols()
     timeframes = parse_timeframes()
     if not symbols or not timeframes:
         raise RuntimeError("KRONOS_TICKERS ou KRONOS_TIMEFRAMES vazio")

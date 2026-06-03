@@ -17,12 +17,14 @@ jobs:
   signal:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    # Variáveis sincronizadas do Railway (mesmo projeto crypto-monitor)
+    environment: "faithful-determination / production"
 
     steps:
       - name: Check secrets
         run: |
           if [ -z "${{ secrets.TELEGRAM_BOT_TOKEN }}" ] || [ -z "${{ secrets.TELEGRAM_CHAT_ID }}" ]; then
-            echo "::error::Defina TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID nos Secrets do repositório."
+            echo "::error::Sem TELEGRAM nos secrets. Prefira: Railway → New Service → Dockerfile.kronos (mesmas Variables)."
             exit 1
           fi
 
@@ -63,7 +65,7 @@ jobs:
           KRONOS_TOKENIZER: NeoQuasar/Kronos-Tokenizer-2k
           KRONOS_MAX_CONTEXT: "2048"
           KRONOS_TIMEFRAMES: 1h,4h,1d
-          KRONOS_TICKERS: BTCUSDT,ETHUSDT,SOLUSDT
+          TICKERS: ${{ vars.TICKERS || 'BTC,ETH,SOL' }}
           KRONOS_SAMPLE_COUNT: "2"
           KRONOS_CHART_DIR: ${{ github.workspace }}/vps/charts
           HF_HOME: ${{ github.workspace }}/.cache/huggingface
