@@ -22,11 +22,13 @@ copy lib/kronos_config.py
 copy lib/kronos_tracker.py
 copy lib/kronos_levels.py
 copy lib/kronos_alignment.py
+copy lib/kronos_bias_cache.py
 copy lib/smc_strategy.py
 copy lib/mexc_klines.py
 copy lib/telegram.py
 copy lib/db.py
 copy vps/kronos_run.sh
+copy vps/kronos_candle_cron.sh
 copy vps/kronos_watchdog.py
 copy vps/kronos_signal.py
 copy vps/kronos_scorecard.py

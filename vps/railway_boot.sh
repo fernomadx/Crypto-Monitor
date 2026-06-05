@@ -16,4 +16,4 @@ except Exception as e:
 PY
 
 echo "Kronos boot: cron assume previsões (evita 2x signal no deploy = OOM)"
-echo "Próximo alerta: minuto 15 a cada 2h UTC (ex. 18:15, 20:15)"
+echo "Próximo alerta: fechamento candle — 1H :02 UTC, 4H :02 em 0/4/8/12/16/20, Diário :05"

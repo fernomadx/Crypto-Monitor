@@ -2,15 +2,17 @@
 """
 vps/kronos_signal.py — Previsão Kronos na VPS → Telegram [KRONOS] + gráficos.
 
-Gera análise em 1H, 4H e Diário (configurável), envia resumo em texto
-e um gráfico por timeframe (histórico + trilha preditiva).
+Por padrão gera 1H, 4H e Diário. Com --tf roda só um timeframe (cron no
+fechamento do candle MEXC/UTC):
 
-Cron sugerido (a cada 4h):
-    0 */4 * * * cd /opt/crypto-monitor && ... python vps/kronos_signal.py
+    2 * * * * kronos_run.sh ... 1h          # de hora em hora
+    2 0,4,8,12,16,20 * * * kronos_run.sh 4h   # a cada 4h
+    5 0 * * * kronos_run.sh ... 1d            # diário
 """
 
 from __future__ import annotations
 
+import argparse
 import logging
 import os
 import sys
@@ -37,10 +39,14 @@ sys.path.insert(0, str(KRONOS_ROOT))
 
 from lib.kronos_config import format_config_footer  # noqa: E402
 from lib.kronos_alignment import (  # noqa: E402
-    collect_biases_by_ticker,
     format_alignment_report,
     should_log_to_scorecard,
     tradeable_for_interval,
+)
+from lib.kronos_bias_cache import (  # noqa: E402
+    format_cache_note,
+    merge_with_results,
+    update_from_results,
 )
 from lib.kronos_levels import compute_trade_levels, limit_entry_price  # noqa: E402
 from lib.kronos_tracker import format_scorecard_brief, log_predictions, new_run_id  # noqa: E402
@@ -111,6 +117,15 @@ def parse_timeframes() -> list[TimeframeConfig]:
             raise ValueError(f"Timeframe desconhecido: {key}. Use: 1h, 4h, 1d")
         configs.append(TIMEFRAME_PRESETS[key])
     return configs
+
+
+def resolve_timeframes(tf_filter: str | None) -> list[TimeframeConfig]:
+    if tf_filter:
+        key = tf_filter.strip().lower()
+        if key not in TIMEFRAME_PRESETS:
+            raise ValueError(f"Timeframe desconhecido: {key}. Use: 1h, 4h, 1d")
+        return [TIMEFRAME_PRESETS[key]]
+    return parse_timeframes()
 
 
 def future_timestamps(last_ts: pd.Timestamp, pred_len: int, interval: str) -> pd.Series:
@@ -420,16 +435,18 @@ def load_predictor():
     return KronosPredictor(model, tokenizer, device=device, max_context=KRONOS_MAX_CONTEXT)
 
 
-def run() -> None:
+def run(tf_filter: str | None = None) -> None:
     symbols = resolve_mexc_symbols()
+    timeframes = resolve_timeframes(tf_filter)
+    if not symbols or not timeframes:
+        raise RuntimeError("KRONOS_TICKERS ou KRONOS_TIMEFRAMES vazio")
+
+    tf_names = ", ".join(tf.label for tf in timeframes)
     send_kronos_alert(
         "Processando",
         f"Gerando previsões para: <code>{', '.join(symbols)}</code>\n"
-        f"Timeframes: <code>{KRONOS_TIMEFRAMES}</code>",
+        f"Timeframe(s): <code>{tf_names}</code>",
     )
-    timeframes = parse_timeframes()
-    if not symbols or not timeframes:
-        raise RuntimeError("KRONOS_TICKERS ou KRONOS_TIMEFRAMES vazio")
 
     predictor = load_predictor()
     now = datetime.now(timezone.utc)
@@ -438,6 +455,7 @@ def run() -> None:
     summary_sections: list[str] = []
     all_errors: list[str] = []
     results_by_interval: dict[str, list[dict]] = {}
+    ran_intervals: set[str] = set()
 
     for tf in timeframes:
         results: list[dict] = []
@@ -453,9 +471,11 @@ def run() -> None:
 
         if results:
             results_by_interval[tf.interval] = results
+            update_from_results(results, tf.interval)
+            ran_intervals.add(tf.interval.lower())
         all_errors.extend(tf_errors)
 
-    biases_by_ticker = collect_biases_by_ticker(results_by_interval)
+    biases_by_ticker = merge_with_results(results_by_interval)
     for interval, results in results_by_interval.items():
         for r in results:
             ok, note = tradeable_for_interval(r["ticker"], interval, biases_by_ticker[r["ticker"]])
@@ -494,7 +514,10 @@ def run() -> None:
         send_kronos_alert("Erro — sem previsões", "\n".join(all_errors) or "Falha desconhecida")
         return
 
-    title = f"Previsão — {now.strftime('%d/%m/%Y %H:%M UTC')}"
+    if len(timeframes) == 1:
+        title = f"Previsão {timeframes[0].label} — {now.strftime('%d/%m/%Y %H:%M UTC')}"
+    else:
+        title = f"Previsão — {now.strftime('%d/%m/%Y %H:%M UTC')}"
     body = format_full_report(summary_sections)
     body = (
         f"📍 <b>Referência:</b> preço base = último candle MEXC; entrada limite com pullback "
@@ -508,7 +531,13 @@ def run() -> None:
 
     if biases_by_ticker:
         body += "\n\n" + format_alignment_report(biases_by_ticker)
-    body += f"\n\n{format_scorecard_brief(7)}"
+    if tf_filter or len(timeframes) > 1:
+        body += f"\n<i>TFs: {format_cache_note(biases_by_ticker, ran_intervals)}</i>"
+    show_scorecard = tf_filter in (None, "4h") or (
+        len(timeframes) > 1 and "4h" in results_by_interval
+    )
+    if show_scorecard:
+        body += f"\n\n{format_scorecard_brief(7)}"
     body += f"\n<i>Run ID: {run_id}</i>\n{format_config_footer()}"
 
     send_kronos_alert(title, body)
@@ -522,8 +551,16 @@ def run() -> None:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Previsão Kronos → Telegram [KRONOS]")
+    parser.add_argument(
+        "--tf",
+        choices=["1h", "4h", "1d"],
+        default=None,
+        help="Roda só este timeframe (cron no fechamento do candle)",
+    )
+    args = parser.parse_args()
     try:
-        run()
+        run(tf_filter=args.tf)
     except Exception as exc:
         logger.exception("kronos_signal abortado: %s", exc)
         try:
