@@ -16,8 +16,10 @@
 # Consensus orchestrator (a cada 4h, na hora cheia)
 0 */4 * * * python /app/agents/orchestrator.py
 
-# Kronos: previsão + gráficos → Telegram [KRONOS] (a cada 2h — mais amostras no DB de performance)
-15 */2 * * * python /app/vps/kronos_signal.py >> /data/kronos.log 2>&1
+# Kronos: previsão + gráficos → Telegram [KRONOS] (a cada 2h, com lock anti-OOM)
+15 */2 * * * /app/vps/kronos_run.sh /data/kronos.log
+# Watchdog: avisa se ficar >3h30 sem alerta OK
+45 */2 * * * python /app/vps/kronos_watchdog.py >> /data/kronos_watchdog.log 2>&1
 
 # Kronos scorecard: avalia previsões maduras (a cada 2h, +15min do signal)
 30 */2 * * * python /app/vps/kronos_scorecard.py >> /data/kronos_scorecard.log 2>&1

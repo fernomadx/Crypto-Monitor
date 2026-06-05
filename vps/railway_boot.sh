@@ -15,13 +15,5 @@ except Exception as e:
     print("boot telegram:", e)
 PY
 
-echo "Kronos boot: primeira execução..."
-python /app/vps/kronos_signal.py >> /data/kronos.log 2>&1 || {
-  echo "Kronos boot: falhou"
-  python - <<'PY' || true
-import sys
-sys.path.insert(0, "/app")
-from lib.telegram import send_kronos_alert
-send_kronos_alert("Erro no boot", "Ver /data/kronos.log no Railway. Cron tenta de novo em 4h.")
-PY
-}
+echo "Kronos boot: cron assume previsões (evita 2x signal no deploy = OOM)"
+echo "Próximo alerta: minuto 15 a cada 2h UTC (ex. 18:15, 20:15)"

@@ -67,6 +67,6 @@ def format_boot_message() -> str:
         f"Temp {c['temperature']} · viés ±{c['bias_threshold']}% · alvo mín {c['min_target']}%",
         f"R:R {c['min_rr']} · stop 4H {c['stop_4h']}% · entrada pullback {c['entry_offset']}%",
         f"Scorecard: <b>{c['score_tf'].upper()}</b> só com <b>3 TFs iguais</b> (sem conflito)",
-        "Gerando 1ª previsão (CPU: 15–40 min)...",
+        "Cron: alerta a cada 2h no minuto :15 UTC (próximo após deploy).",
     ]
     return "\n".join(lines)

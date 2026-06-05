@@ -26,6 +26,8 @@ copy lib/smc_strategy.py
 copy lib/mexc_klines.py
 copy lib/telegram.py
 copy lib/db.py
+copy vps/kronos_run.sh
+copy vps/kronos_watchdog.py
 copy vps/kronos_signal.py
 copy vps/kronos_scorecard.py
 copy vps/kronos_daily_report.py
