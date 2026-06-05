@@ -17,7 +17,6 @@ on:
       - 'README.md'
       - '.env.example'
       - '.github/workflows/**'
-      - '!arquivo-kronos/**'
   workflow_dispatch:
 
 permissions:

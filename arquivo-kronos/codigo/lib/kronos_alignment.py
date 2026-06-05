@@ -50,41 +50,72 @@ def alignment_summary(biases: dict[str, str]) -> tuple[str, str]:
     return "conflict", "conflito entre timeframes"
 
 
+def _dominant_bias(biases: dict[str, str]) -> str | None:
+    """Viés majoritário entre TFs direcionais (BULLISH ou BEARISH)."""
+    bulls = sum(1 for b in biases.values() if b == "BULLISH")
+    bears = sum(1 for b in biases.values() if b == "BEARISH")
+    if bulls > bears and bulls >= MIN_TF_AGREEMENT:
+        return "BULLISH"
+    if bears > bulls and bears >= MIN_TF_AGREEMENT:
+        return "BEARISH"
+    return None
+
+
 def tradeable_for_interval(ticker: str, interval: str, biases: dict[str, str]) -> tuple[bool, str]:
     """
     Pode entrar no catálogo/scorecard neste TF?
+    - Scorecard (4H): exige viés direcional no 4H, alinhado ao consenso.
     - 1h: não se divergir de 4h e 4h = 1d (mesmo viés).
-    - Geral: precisa de alinhamento global OU 4h+1d alinhados (intervalo primário).
     """
     iv = interval.lower()
     status, note = alignment_summary(biases)
     b1 = biases.get("1h", "NEUTRO")
     b4 = biases.get("4h", "NEUTRO")
     bd = biases.get("1d", "NEUTRO")
+    iv_bias = biases.get(iv, "NEUTRO")
+
+    if iv == SCORE_INTERVAL and _side(iv_bias) == 0:
+        return False, f"{iv.upper()} sem viés direcional — não entra no scorecard"
+
+    dominant = _dominant_bias(biases)
 
     if status == "aligned":
+        if iv == SCORE_INTERVAL and dominant and iv_bias != dominant:
+            return False, f"4H ({iv_bias}) não confirma consenso {dominant}"
         return True, note
 
-    # 4h + diário concordam → operável em 4h e 1d, não em 1h divergente
+    # 4h + diário concordam → operável em 4h, não em 1h divergente
     if b4 != "NEUTRO" and b4 == bd and _side(b4) != 0:
         if iv == "1h" and b1 != b4:
             return False, "1H diverge de 4H/D — ignorado"
-        if iv in ("4h", "1d"):
+        if iv == SCORE_INTERVAL:
+            if dominant and b4 != dominant:
+                return False, f"4H ({b4}) não confirma consenso {dominant}"
+            return True, "4H e Diário alinhados"
+        if iv == "1d":
             return True, "4H e Diário alinhados"
         return False, note
 
     return False, note
 
 
-def should_log_to_scorecard(interval: str, tradeable: bool) -> bool:
-    return interval.lower() == SCORE_INTERVAL and tradeable
+def should_log_to_scorecard(interval: str, tradeable: bool, result: dict | None = None) -> bool:
+    if interval.lower() != SCORE_INTERVAL or not tradeable:
+        return False
+    if result is None:
+        return True
+    if result.get("bias") not in ("BULLISH", "BEARISH"):
+        return False
+    if not result.get("has_levels", True):
+        return False
+    return True
 
 
 def format_alignment_report(biases_by_ticker: dict[str, dict[str, str]]) -> str:
     lines = [
         "<b>📐 Consenso multi-timeframe</b>",
-        f"<i>Scorecard: só <b>{SCORE_INTERVAL.upper()}</b> com ≥{MIN_TF_AGREEMENT} TFs alinhados "
-        f"(1H omitido se divergir de 4H=D).</i>",
+        f"<i>Scorecard: só <b>{SCORE_INTERVAL.upper()}</b> com viés direcional + ≥{MIN_TF_AGREEMENT} TFs "
+        f"alinhados (4H deve confirmar o consenso).</i>",
         "",
     ]
     for ticker in sorted(biases_by_ticker):

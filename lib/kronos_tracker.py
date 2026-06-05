@@ -19,7 +19,7 @@ from lib.mexc_klines import bars_to_timedelta, fetch_bars_list, fetch_close_at
 
 logger = logging.getLogger(__name__)
 
-NEUTRAL_THRESHOLD_PCT = 0.15
+NEUTRAL_THRESHOLD_PCT = float(os.environ.get("KRONOS_BIAS_THRESHOLD_PCT", "0.30"))
 INITIAL_CAPITAL_USDC = float(os.environ.get("KRONOS_INITIAL_CAPITAL", "1000"))
 MARGIN_USDC = float(os.environ.get("KRONOS_POSITION_USDC", "100"))
 LEVERAGE = max(1.0, float(os.environ.get("KRONOS_LEVERAGE", "10")))
@@ -205,15 +205,27 @@ def simulate_limit_trade(
     exit_px = None
     exit_type = "market_due"
     for bar in exit_bars:
-        if stop is not None and _stop_hit(bar, stop, side):
+        stop_hit = stop is not None and _stop_hit(bar, stop, side)
+        target_hit = (
+            side == "long" and float(bar["high"]) >= target
+        ) or (
+            side == "short" and float(bar["low"]) <= target
+        )
+        if stop_hit and target_hit:
+            # Mesma vela: usa distância do open para estimar qual nível foi atingido primeiro
+            o = float(bar["open"])
+            if side == "long":
+                exit_type = "stop_loss" if abs(o - stop) <= abs(o - target) else "limit_target"
+                exit_px = stop if exit_type == "stop_loss" else target
+            else:
+                exit_type = "stop_loss" if abs(o - stop) <= abs(o - target) else "limit_target"
+                exit_px = stop if exit_type == "stop_loss" else target
+            break
+        if stop_hit:
             exit_px = stop
             exit_type = "stop_loss"
             break
-        if side == "long" and float(bar["high"]) >= target:
-            exit_px = target
-            exit_type = "limit_target"
-            break
-        if side == "short" and float(bar["low"]) <= target:
+        if target_hit:
             exit_px = target
             exit_type = "limit_target"
             break
