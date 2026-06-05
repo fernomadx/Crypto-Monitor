@@ -1,5 +1,6 @@
-# Publica arquivo-kronos/ no GitHub Pages (acesso web)
-# URL: https://fernomadx.github.io/Crypto-Monitor/
+# Publica arquivo-kronos/ na branch gh-pages (GitHub Pages)
+# URL após repo público + Settings → Pages → branch gh-pages / root:
+# https://fernomadx.github.io/Crypto-Monitor/
 
 name: Arquivo Kronos — GitHub Pages
 
@@ -12,36 +13,28 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
   group: pages
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
-  sync-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Sync código para arquivo-kronos
         run: bash arquivo-kronos/sync-from-repo.sh
 
-      - name: Setup Pages
-        uses: actions/configure-pages@v4
+      - name: Publicar em gh-pages
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          enablement: true
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: arquivo-kronos
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./arquivo-kronos
+          publish_branch: gh-pages
+          force_orphan: true
+          user_name: github-actions[bot]
+          user_email: github-actions[bot]@users.noreply.github.com
+          commit_message: 'deploy: arquivo-kronos'
