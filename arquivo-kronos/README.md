@@ -54,13 +54,13 @@ crontab                  # agents + kronos (Railway)
 
 ---
 
-## Atualizar este arquivo
+## Atualização automática
 
-```bash
-./sync-from-repo.sh
-git add . && git commit -m "chore: sync arquivo-kronos" && git push
-```
+Mudanças em `lib/`, `vps/`, Dockerfile, crontab ou workflows na `main` disparam:
 
-O workflow `.github/workflows/arquivo-kronos-pages.yml` republica o site automaticamente.
+1. **`sync-arquivo-kronos.yml`** → atualiza `codigo/`
+2. **`arquivo-kronos-pages.yml`** → republica https://fernomadx.github.io/Crypto-Monitor/
 
-Quando criar algo novo no projeto, adicione uma linha em `docs/01-indice-arquivos.md` e, se for decisão importante, em `docs/07-decisoes-e-contexto.md`.
+Manual: `./sync-from-repo.sh` + commit.
+
+Ao criar algo novo, atualize `docs/01-indice-arquivos.md` e, se for decisão importante, `docs/07-decisoes-e-contexto.md`.

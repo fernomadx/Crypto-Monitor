@@ -1,0 +1,17 @@
+---
+description: Manter arquivo-kronos sincronizado após mudanças no projeto
+globs:
+  - lib/**
+  - vps/**
+  - Dockerfile
+  - Dockerfile.kronos
+  - crontab
+  - crontab.kronos
+  - .github/workflows/**
+---
+
+Ao alterar código ou infra do Kronos/crypto-monitor:
+
+1. Rode `bash arquivo-kronos/sync-from-repo.sh`
+2. Inclua `arquivo-kronos/codigo/` no commit (o CI também sincroniza na `main`, mas faça localmente para não esperar)
+3. Se for decisão ou feature nova, atualize `arquivo-kronos/docs/01-indice-arquivos.md` ou `docs/07-decisoes-e-contexto.md`
