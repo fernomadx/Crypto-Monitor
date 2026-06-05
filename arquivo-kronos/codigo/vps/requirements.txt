@@ -1,0 +1,13 @@
+# VPS — Kronos signal (instalar em venv separado do crypto-monitor)
+# pip install -r vps/requirements.txt
+
+-r ../requirements.txt
+
+numpy
+pandas>=2.2.0
+torch>=2.0.0
+einops==0.8.1
+huggingface_hub>=0.33.0
+safetensors>=0.6.0
+tqdm>=4.67.0
+matplotlib>=3.8.0

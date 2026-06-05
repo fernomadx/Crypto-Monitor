@@ -1,0 +1,86 @@
+# Roda Kronos + gráficos + Telegram sem VPS (GitHub Actions, a cada 4h).
+# Configure em Settings → Secrets → Actions:
+#   TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+
+name: Kronos Telegram Signal
+
+on:
+  schedule:
+    - cron: "0 */4 * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "vps/**"
+      - "lib/telegram.py"
+      - ".github/workflows/kronos-telegram-cron.yml"
+
+concurrency:
+  group: kronos-signal
+  cancel-in-progress: false
+
+jobs:
+  signal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    # Variáveis sincronizadas do Railway (mesmo projeto crypto-monitor)
+    environment: "faithful-determination / production"
+
+    steps:
+      - name: Check secrets
+        run: |
+          if [ -z "${{ secrets.TELEGRAM_BOT_TOKEN }}" ] || [ -z "${{ secrets.TELEGRAM_CHAT_ID }}" ]; then
+            echo "::error::Sem TELEGRAM nos secrets. Prefira: Railway → New Service → Dockerfile.kronos (mesmas Variables)."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - name: Clone Kronos
+        run: git clone --depth 1 https://github.com/shiyu-coder/Kronos.git Kronos
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            vps/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip wheel
+          pip install -r requirements.txt
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install einops==0.8.1 huggingface_hub safetensors tqdm matplotlib pandas
+
+      - name: Cache Hugging Face models
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: kronos-models-${{ hashFiles('vps/kronos_signal.py') }}
+          restore-keys: kronos-models-
+
+      - name: Run Kronos signal + charts → Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          KRONOS_PATH: ${{ github.workspace }}/Kronos
+          KRONOS_DEVICE: cpu
+          KRONOS_MODEL: NeoQuasar/Kronos-mini
+          KRONOS_TOKENIZER: NeoQuasar/Kronos-Tokenizer-2k
+          KRONOS_MAX_CONTEXT: "2048"
+          KRONOS_TIMEFRAMES: 1h,4h,1d
+          TICKERS: ${{ vars.TICKERS || 'BTC,ETH,SOL' }}
+          KRONOS_SAMPLE_COUNT: "2"
+          KRONOS_CHART_DIR: ${{ github.workspace }}/vps/charts
+          HF_HOME: ${{ github.workspace }}/.cache/huggingface
+        run: python vps/kronos_signal.py
+
+      - name: Upload charts (artifact backup)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kronos-charts-${{ github.run_id }}
+          path: vps/charts/*.png
+          if-no-files-found: ignore

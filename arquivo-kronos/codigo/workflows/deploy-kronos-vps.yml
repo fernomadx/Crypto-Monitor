@@ -1,0 +1,35 @@
+name: Deploy Kronos to VPS
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        if: env.VPS_HOST != ''
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER || 'root' }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script: |
+            set -e
+            export REPO_DIR=/opt/crypto-monitor
+            export KRONOS_DIR=/opt/Kronos
+            git clone https://github.com/fernomadx/Crypto-Monitor.git "$REPO_DIR" 2>/dev/null || true
+            cd "$REPO_DIR" && git pull origin main
+            sudo bash vps/install.sh
+
+      - name: VPS secrets missing
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        if: env.VPS_HOST == ''
+        run: |
+          echo "VPS_HOST não configurado. Kronos já roda no crypto-monitor (Railway) após redeploy."
