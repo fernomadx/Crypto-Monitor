@@ -56,6 +56,10 @@ from lib.telegram import send_kronos_alert, send_kronos_photo  # noqa: E402
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
+
+class CandleNotReadyError(Exception):
+    """MEXC ainda não publicou o candle fechado."""
+
 CHART_DIR = Path(os.environ.get("KRONOS_CHART_DIR", REPO_ROOT / "vps" / "charts"))
 
 KRONOS_MODEL = os.environ.get("KRONOS_MODEL", "NeoQuasar/Kronos-mini")
@@ -126,6 +130,32 @@ def resolve_timeframes(tf_filter: str | None) -> list[TimeframeConfig]:
             raise ValueError(f"Timeframe desconhecido: {key}. Use: 1h, 4h, 1d")
         return [TIMEFRAME_PRESETS[key]]
     return parse_timeframes()
+
+
+def expected_last_candle_open(wake_at: datetime, interval: str) -> pd.Timestamp:
+    """open_time do último candle fechado no instante wake_at (UTC)."""
+    boundary = wake_at.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    delta = {"1h": timedelta(hours=1), "4h": timedelta(hours=4), "1d": timedelta(days=1)}
+    if interval not in delta:
+        raise ValueError(interval)
+    return pd.Timestamp(boundary - delta[interval], tz="UTC")
+
+
+def verify_last_candle_closed(last_ts: pd.Timestamp, interval: str) -> None:
+    delta = INTERVAL_DELTAS.get(interval)
+    if delta is None:
+        return
+    ts = pd.Timestamp(last_ts)
+    if ts.tzinfo is None:
+        ts = ts.tz_localize("UTC")
+    else:
+        ts = ts.tz_convert("UTC")
+    close_at = ts + delta
+    now = datetime.now(timezone.utc)
+    if close_at > now - timedelta(seconds=3):
+        raise CandleNotReadyError(
+            f"candle {interval.upper()} ainda aberto (fecha em {int((close_at - now).total_seconds())}s)"
+        )
 
 
 def future_timestamps(last_ts: pd.Timestamp, pred_len: int, interval: str) -> pd.Series:
@@ -203,7 +233,13 @@ def coherence_notes(results: list[dict], corrs: dict[str, float]) -> list[str]:
     return notes
 
 
-def analyze_symbol(predictor, symbol: str, tf: TimeframeConfig) -> dict:
+def analyze_symbol(
+    predictor,
+    symbol: str,
+    tf: TimeframeConfig,
+    *,
+    expected_candle_open: pd.Timestamp | None = None,
+) -> dict:
     need = tf.lookback + 5
     df = fetch_klines(symbol, tf.interval, limit=min(need, MEXC_KLINES_MAX_LIMIT))
 
@@ -213,6 +249,23 @@ def analyze_symbol(predictor, symbol: str, tf: TimeframeConfig) -> dict:
     hist = df.iloc[-tf.lookback:].reset_index(drop=True)
     last_close = float(hist["close"].iloc[-1])
     last_ts = hist["timestamps"].iloc[-1]
+
+    if expected_candle_open is not None:
+        exp = pd.Timestamp(expected_candle_open)
+        if exp.tzinfo is None:
+            exp = exp.tz_localize("UTC")
+        else:
+            exp = exp.tz_convert("UTC")
+        got = pd.Timestamp(last_ts)
+        if got.tzinfo is None:
+            got = got.tz_localize("UTC")
+        else:
+            got = got.tz_convert("UTC")
+        if abs((got - exp).total_seconds()) > 90:
+            raise CandleNotReadyError(
+                f"{symbol}@{tf.interval}: esperado candle {exp}, MEXC retornou {got}"
+            )
+    verify_last_candle_closed(last_ts, tf.interval)
 
     x_df = hist[["open", "high", "low", "close", "volume", "amount"]]
     y_timestamp = future_timestamps(last_ts, tf.pred_len, tf.interval)
@@ -435,20 +488,27 @@ def load_predictor():
     return KronosPredictor(model, tokenizer, device=device, max_context=KRONOS_MAX_CONTEXT)
 
 
-def run(tf_filter: str | None = None) -> None:
+def _touch_last_ok() -> None:
+    stamp = Path(os.environ.get("KRONOS_LAST_OK", "/data/kronos.last_ok"))
+    try:
+        stamp.parent.mkdir(parents=True, exist_ok=True)
+        stamp.touch()
+    except OSError as e:
+        logger.warning("Não gravou kronos.last_ok: %s", e)
+
+
+def execute_run(
+    predictor,
+    tf_filter: str | None = None,
+    *,
+    candle_wake_at: datetime | None = None,
+    text_before_chart: bool = True,
+) -> None:
     symbols = resolve_mexc_symbols()
     timeframes = resolve_timeframes(tf_filter)
     if not symbols or not timeframes:
         raise RuntimeError("KRONOS_TICKERS ou KRONOS_TIMEFRAMES vazio")
 
-    tf_names = ", ".join(tf.label for tf in timeframes)
-    send_kronos_alert(
-        "Processando",
-        f"Gerando previsões para: <code>{', '.join(symbols)}</code>\n"
-        f"Timeframe(s): <code>{tf_names}</code>",
-    )
-
-    predictor = load_predictor()
     now = datetime.now(timezone.utc)
     stamp = now.strftime("%Y%m%d_%H%M")
     run_id = new_run_id()
@@ -459,21 +519,28 @@ def run(tf_filter: str | None = None) -> None:
 
     for tf in timeframes:
         results: list[dict] = []
-        tf_errors: list[str] = []
+        expected_open = (
+            expected_last_candle_open(candle_wake_at, tf.interval) if candle_wake_at else None
+        )
 
         for symbol in symbols:
             try:
-                results.append(analyze_symbol(predictor, symbol, tf))
+                results.append(
+                    analyze_symbol(
+                        predictor, symbol, tf, expected_candle_open=expected_open
+                    )
+                )
                 logger.info("OK %s @ %s", symbol, tf.interval)
+            except CandleNotReadyError:
+                raise
             except Exception as exc:
                 logger.exception("%s @ %s: %s", symbol, tf.interval, exc)
-                tf_errors.append(f"{symbol}@{tf.interval}: {exc}")
+                all_errors.append(f"{symbol}@{tf.interval}: {exc}")
 
         if results:
             results_by_interval[tf.interval] = results
             update_from_results(results, tf.interval)
             ran_intervals.add(tf.interval.lower())
-        all_errors.extend(tf_errors)
 
     biases_by_ticker = merge_with_results(results_by_interval)
     for interval, results in results_by_interval.items():
@@ -482,9 +549,10 @@ def run(tf_filter: str | None = None) -> None:
             r["tradeable"] = ok
             r["align_note"] = note
 
+    chart_jobs: list[tuple] = []
+
     for tf in timeframes:
         results = results_by_interval.get(tf.interval, [])
-        tf_errors: list[str] = []
         if not results:
             continue
 
@@ -499,16 +567,7 @@ def run(tf_filter: str | None = None) -> None:
             )
             logger.info("Catálogo %s: %d/%d operáveis", tf.interval, len(to_log), len(results))
         summary_sections.append(format_timeframe_summary(tf.label, results, now))
-        chart_path = CHART_DIR / f"kronos_{tf.interval}_{stamp}.png"
-        try:
-            render_timeframe_chart(results, tf.label, chart_path)
-            send_kronos_photo(
-                str(chart_path),
-                f"Gráfico {tf.label} — {now.strftime('%Y-%m-%d %H:%M UTC')}",
-            )
-        except Exception as exc:
-            logger.exception("Gráfico %s falhou: %s", tf.label, exc)
-            all_errors.append(f"gráfico {tf.label}: {exc}")
+        chart_jobs.append((tf, results))
 
     if not summary_sections:
         send_kronos_alert("Erro — sem previsões", "\n".join(all_errors) or "Falha desconhecida")
@@ -520,7 +579,7 @@ def run(tf_filter: str | None = None) -> None:
         title = f"Previsão — {now.strftime('%d/%m/%Y %H:%M UTC')}"
     body = format_full_report(summary_sections)
     body = (
-        f"📍 <b>Referência:</b> preço base = último candle MEXC; entrada limite com pullback "
+        f"📍 <b>Referência:</b> preço base = último candle MEXC fechado; entrada limite com pullback "
         f"{os.environ.get('KRONOS_LIMIT_ENTRY_OFFSET_PCT', '0.15')}%.\n"
         f"🎯 <b>Alvo / 🛑 Stop:</b> previsto em mais barras, com R:R mínimo "
         f"(stop menor que o alvo em distância %).\n\n"
@@ -540,14 +599,66 @@ def run(tf_filter: str | None = None) -> None:
         body += f"\n\n{format_scorecard_brief(7)}"
     body += f"\n<i>Run ID: {run_id}</i>\n{format_config_footer()}"
 
+    if not text_before_chart:
+        for tf, results in chart_jobs:
+            chart_path = CHART_DIR / f"kronos_{tf.interval}_{stamp}.png"
+            try:
+                render_timeframe_chart(results, tf.label, chart_path)
+                send_kronos_photo(
+                    str(chart_path),
+                    f"Gráfico {tf.label} — {now.strftime('%Y-%m-%d %H:%M UTC')}",
+                )
+            except Exception as exc:
+                logger.exception("Gráfico %s falhou: %s", tf.label, exc)
+                all_errors.append(f"gráfico {tf.label}: {exc}")
+
     send_kronos_alert(title, body)
-    stamp = Path(os.environ.get("KRONOS_LAST_OK", "/data/kronos.last_ok"))
-    try:
-        stamp.parent.mkdir(parents=True, exist_ok=True)
-        stamp.touch()
-    except OSError as e:
-        logger.warning("Não gravou kronos.last_ok: %s", e)
-    logger.info("Relatório [KRONOS] enviado (%d timeframes)", len(summary_sections))
+    _touch_last_ok()
+    logger.info("Texto [KRONOS] enviado (%d timeframes)", len(summary_sections))
+
+    if text_before_chart:
+        for tf, results in chart_jobs:
+            chart_path = CHART_DIR / f"kronos_{tf.interval}_{stamp}.png"
+            try:
+                render_timeframe_chart(results, tf.label, chart_path)
+                send_kronos_photo(
+                    str(chart_path),
+                    f"Gráfico {tf.label} — {now.strftime('%Y-%m-%d %H:%M UTC')}",
+                )
+            except Exception as exc:
+                logger.exception("Gráfico %s falhou: %s", tf.label, exc)
+
+
+def run(
+    tf_filter: str | None = None,
+    *,
+    predictor=None,
+    notify_processing: bool = True,
+    candle_wake_at: datetime | None = None,
+    text_before_chart: bool = True,
+) -> None:
+    symbols = resolve_mexc_symbols()
+    timeframes = resolve_timeframes(tf_filter)
+    if not symbols or not timeframes:
+        raise RuntimeError("KRONOS_TICKERS ou KRONOS_TIMEFRAMES vazio")
+
+    if predictor is None:
+        if notify_processing:
+            tf_names = ", ".join(tf.label for tf in timeframes)
+            send_kronos_alert(
+                "Processando",
+                f"Gerando previsões para: <code>{', '.join(symbols)}</code>\n"
+                f"Timeframe(s): <code>{tf_names}</code>\n"
+                f"<i>Carregando modelo ML (pode levar vários minutos)...</i>",
+            )
+        predictor = load_predictor()
+
+    execute_run(
+        predictor,
+        tf_filter,
+        candle_wake_at=candle_wake_at,
+        text_before_chart=text_before_chart,
+    )
 
 
 if __name__ == "__main__":
@@ -561,6 +672,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
     try:
         run(tf_filter=args.tf)
+    except CandleNotReadyError as exc:
+        logger.warning("candle não pronto: %s", exc)
+        sys.exit(2)
     except Exception as exc:
         logger.exception("kronos_signal abortado: %s", exc)
         try:

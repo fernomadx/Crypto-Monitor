@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 
-RULES_VERSION = "3.2"
+RULES_VERSION = "3.3"
 
 # Parâmetros v3.1 — aplicados no boot para corrigir vars antigas no painel Railway
 V31_DEFAULTS: dict[str, str] = {
@@ -67,6 +67,7 @@ def format_boot_message() -> str:
         f"Temp {c['temperature']} · viés ±{c['bias_threshold']}% · alvo mín {c['min_target']}%",
         f"R:R {c['min_rr']} · stop 4H {c['stop_4h']}% · entrada pullback {c['entry_offset']}%",
         f"Scorecard: <b>{c['score_tf'].upper()}</b> só com <b>3 TFs iguais</b> (sem conflito)",
-        "Cron (fechamento candle UTC): 1H :02 horário · 4H :02 em 0/4/8/12/16/20 · Diário :05.",
+        "Daemon: alerta ~1–3 min após fechar candle (1H horário · 4H 0/4/8/12/16/20 · Diário 00:00 UTC).",
+        "Texto da previsão enviado antes do gráfico — modelo sempre em memória.",
     ]
     return "\n".join(lines)

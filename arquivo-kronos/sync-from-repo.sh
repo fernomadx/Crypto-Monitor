@@ -29,6 +29,7 @@ copy lib/telegram.py
 copy lib/db.py
 copy vps/kronos_run.sh
 copy vps/kronos_candle_cron.sh
+copy vps/kronos_daemon.py
 copy vps/kronos_watchdog.py
 copy vps/kronos_signal.py
 copy vps/kronos_scorecard.py
