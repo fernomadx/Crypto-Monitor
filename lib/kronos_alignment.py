@@ -36,17 +36,34 @@ def alignment_summary(biases: dict[str, str]) -> tuple[str, str]:
     """
     Retorna (status, nota).
     status: aligned | conflict | neutral
+
+    Com 3 timeframes: exige os 3 no mesmo viés (sem NEUTRO, sem split).
     """
-    sides = [_side(b) for b in biases.values() if _side(b) != 0]
+    if not biases:
+        return "neutral", "sem dados"
+
+    n = len(biases)
+    values = list(biases.values())
+    neutrals = sum(1 for v in values if v == "NEUTRO")
+    bulls = sum(1 for v in values if v == "BULLISH")
+    bears = sum(1 for v in values if v == "BEARISH")
+
+    if n >= 3:
+        if neutrals > 0:
+            return "neutral", "TF sem viés direcional"
+        if bulls == n:
+            return "aligned", f"alinhado alta ({n} TFs)"
+        if bears == n:
+            return "aligned", f"alinhado baixa ({n} TFs)"
+        return "conflict", "conflito entre timeframes"
+
+    sides = [_side(b) for b in values if _side(b) != 0]
     if len(sides) < MIN_TF_AGREEMENT:
         return "neutral", "poucos TFs com viés claro"
-
-    bulls = sum(1 for s in sides if s > 0)
-    bears = sum(1 for s in sides if s < 0)
     if bulls >= MIN_TF_AGREEMENT and bears == 0:
-        return "aligned", f"alinhado alta ({bulls}/{len(biases)} TFs)"
+        return "aligned", f"alinhado alta ({bulls}/{n} TFs)"
     if bears >= MIN_TF_AGREEMENT and bulls == 0:
-        return "aligned", f"alinhado baixa ({bears}/{len(biases)} TFs)"
+        return "aligned", f"alinhado baixa ({bears}/{n} TFs)"
     return "conflict", "conflito entre timeframes"
 
 
