@@ -233,6 +233,14 @@ def simulate_limit_trade(
     if exit_px is None:
         exit_px = due_close
         exit_type = "market_due"
+        # Vencimento: não deixa perda pior que o stop (evita bleed além do risco definido)
+        if stop is not None:
+            if side == "long" and exit_px < stop:
+                exit_px = stop
+                exit_type = "stop_loss"
+            elif side == "short" and exit_px > stop:
+                exit_px = stop
+                exit_type = "stop_loss"
 
     fee_exit = _fee_usdc(
         notional,
@@ -302,7 +310,7 @@ def log_predictions(
                     tf_label,
                     interval,
                     _iso(candle),
-                    r["last_close"],
+                    r.get("entry_limit", r["last_close"]),
                     r["pred_close"],
                     r["pred_close_long"],
                     r["pct_short"],
