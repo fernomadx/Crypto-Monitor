@@ -160,6 +160,10 @@ sudo bash vps/install.sh
 
 [`vps/README.md`](vps/README.md) · DB próprio na VPS (`kronos_vps.db`)
 
+## Arquivo do projeto (consulta rápida)
+
+Tudo documentado em **[`arquivo-kronos/`](arquivo-kronos/README.md)** — índice, Railway, Hetzner, scorecard, comandos e decisões.
+
 ## Estrutura de arquivos
 
 ```
