@@ -69,7 +69,7 @@ No painel do projeto Railway → **Variables** → **New Variable**, adicione um
 | Variável | Valor |
 |---|---|
 | `TELEGRAM_BOT_TOKEN` | seu token |
-| `TELEGRAM_CHAT_ID` | `7696151400` |
+| `TELEGRAM_CHAT_ID` | seu chat id |
 | `MEXC_API_KEY` | sua key |
 | `MEXC_API_SECRET` | seu secret |
 | `ANTHROPIC_API_KEY` | sua key |
