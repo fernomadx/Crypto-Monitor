@@ -512,6 +512,12 @@ def run() -> None:
     body += f"\n<i>Run ID: {run_id}</i>\n{format_config_footer()}"
 
     send_kronos_alert(title, body)
+    stamp = Path(os.environ.get("KRONOS_LAST_OK", "/data/kronos.last_ok"))
+    try:
+        stamp.parent.mkdir(parents=True, exist_ok=True)
+        stamp.touch()
+    except OSError as e:
+        logger.warning("Não gravou kronos.last_ok: %s", e)
     logger.info("Relatório [KRONOS] enviado (%d timeframes)", len(summary_sections))
 
 

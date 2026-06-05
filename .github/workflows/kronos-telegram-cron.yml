@@ -8,12 +8,6 @@ on:
   schedule:
     - cron: "0 */4 * * *"
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - "vps/**"
-      - "lib/telegram.py"
-      - ".github/workflows/kronos-telegram-cron.yml"
 
 concurrency:
   group: kronos-signal
@@ -72,7 +66,12 @@ jobs:
           KRONOS_MAX_CONTEXT: "2048"
           KRONOS_TIMEFRAMES: 1h,4h,1d
           TICKERS: ${{ vars.TICKERS || 'BTC,ETH,SOL' }}
-          KRONOS_SAMPLE_COUNT: "2"
+          KRONOS_SAMPLE_COUNT: "4"
+          KRONOS_TEMPERATURE: "0.65"
+          KRONOS_BIAS_THRESHOLD_PCT: "0.30"
+          KRONOS_MIN_RR: "2.0"
+          KRONOS_MAX_STOP_PCT_4H: "1.8"
+          KRONOS_MIN_TF_AGREEMENT: "3"
           KRONOS_CHART_DIR: ${{ github.workspace }}/vps/charts
           HF_HOME: ${{ github.workspace }}/.cache/huggingface
         run: python vps/kronos_signal.py

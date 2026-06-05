@@ -5,7 +5,7 @@ dockerfilePath = "Dockerfile"
 [deploy]
 restartPolicyType = "always"
 restartPolicyMaxRetries = 5
-# Redeploy: Kronos v3.1 bootstrap force defaults (2026-06-05)
+# Redeploy: fix boot OOM + lock signal + watchdog (2026-06-05)
 
 # Volume montado em /data — configure no painel Railway:
 # Settings → Volumes → Mount Path: /data
