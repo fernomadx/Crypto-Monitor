@@ -10,6 +10,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
+from lib.kronos_config import apply_v31_defaults  # noqa: E402
+
+apply_v31_defaults()
+
 from lib.kronos_tracker import format_daily_report_telegram, init_kronos_tables  # noqa: E402
 from lib.telegram import send_kronos_alert  # noqa: E402
 

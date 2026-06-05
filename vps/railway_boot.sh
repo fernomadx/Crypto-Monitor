@@ -7,7 +7,8 @@ python - <<'PY' || true
 import os, sys
 sys.path.insert(0, "/app")
 try:
-    from lib.kronos_config import format_boot_message
+    from lib.kronos_config import apply_v31_defaults, format_boot_message
+    apply_v31_defaults()
     from lib.telegram import send_kronos_alert
     send_kronos_alert("Serviço iniciado", format_boot_message())
 except Exception as e:
