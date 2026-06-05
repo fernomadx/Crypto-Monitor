@@ -7,12 +7,9 @@ python - <<'PY' || true
 import os, sys
 sys.path.insert(0, "/app")
 try:
+    from lib.kronos_config import format_boot_message
     from lib.telegram import send_kronos_alert
-    tickers = os.environ.get("TICKERS", "BTC,ETH,SOL")
-    send_kronos_alert(
-        "Serviço iniciado",
-        f"Kronos no crypto-monitor.\nMoedas: <code>{tickers}</code>\nGerando 1ª previsão (pode levar 15–40 min em CPU)...",
-    )
+    send_kronos_alert("Serviço iniciado", format_boot_message())
 except Exception as e:
     print("boot telegram:", e)
 PY

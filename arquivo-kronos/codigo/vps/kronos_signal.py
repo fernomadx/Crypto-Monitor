@@ -31,6 +31,7 @@ sys.path.insert(0, str(REPO_ROOT))
 KRONOS_ROOT = Path(os.environ.get("KRONOS_PATH", REPO_ROOT / "Kronos"))
 sys.path.insert(0, str(KRONOS_ROOT))
 
+from lib.kronos_config import format_config_footer  # noqa: E402
 from lib.kronos_alignment import (  # noqa: E402
     collect_biases_by_ticker,
     format_alignment_report,
@@ -504,10 +505,7 @@ def run() -> None:
     if biases_by_ticker:
         body += "\n\n" + format_alignment_report(biases_by_ticker)
     body += f"\n\n{format_scorecard_brief(7)}"
-    body += (
-        f"\n<i>Run ID: {run_id} — scorecard: {os.environ.get('KRONOS_SCORE_INTERVAL', '4h').upper()} "
-        f"operável · sim {os.environ.get('KRONOS_LEVERAGE', '10')}x</i>"
-    )
+    body += f"\n<i>Run ID: {run_id}</i>\n{format_config_footer()}"
 
     send_kronos_alert(title, body)
     logger.info("Relatório [KRONOS] enviado (%d timeframes)", len(summary_sections))
