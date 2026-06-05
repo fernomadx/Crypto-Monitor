@@ -1,5 +1,5 @@
 #!/bin/sh
-# Após deploy Railway: avisa no Telegram e roda a 1ª previsão.
+# Após deploy Railway: avisa no Telegram e inicia daemon (modelo em memória).
 echo "Kronos boot: aguardando 45s (rede + volume)..."
 sleep 45
 
@@ -15,5 +15,6 @@ except Exception as e:
     print("boot telegram:", e)
 PY
 
-echo "Kronos boot: cron assume previsões (evita 2x signal no deploy = OOM)"
-echo "Próximo alerta: minuto 15 a cada 2h UTC (ex. 18:15, 20:15)"
+echo "Kronos boot: iniciando daemon (modelo em RAM, alerta no fechamento do candle)..."
+nohup python /app/vps/kronos_daemon.py >> /data/kronos_daemon.log 2>&1 &
+echo "Daemon PID $! — log em /data/kronos_daemon.log"

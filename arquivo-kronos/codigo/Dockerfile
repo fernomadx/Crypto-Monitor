@@ -54,7 +54,7 @@ ENV KRONOS_PATH=/app/Kronos \
     TRANSFORMERS_CACHE=/data/huggingface
 
 RUN mkdir -p /data /data/kronos/charts /data/huggingface \
-    && chmod +x /app/vps/railway_boot.sh /app/vps/kronos_run.sh 2>/dev/null || true
+    && chmod +x /app/vps/railway_boot.sh /app/vps/kronos_run.sh /app/vps/kronos_candle_cron.sh /app/vps/kronos_daemon.py 2>/dev/null || true
 
 # supercronic + boot Kronos (1ª execução após deploy)
 CMD ["/bin/sh", "-c", "/app/vps/railway_boot.sh & exec supercronic /app/crontab"]
