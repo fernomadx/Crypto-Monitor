@@ -49,4 +49,6 @@ copy .github/workflows/kronos-daily-report.yml workflows/kronos-daily-report.yml
 copy .github/workflows/deploy-kronos-vps.yml workflows/deploy-kronos-vps.yml
 copy .github/workflows/kronos-telegram-cron.yml workflows/kronos-telegram-cron.yml
 copy .github/workflows/arquivo-kronos-pages.yml workflows/arquivo-kronos-pages.yml
+copy .github/workflows/sync-arquivo-kronos.yml workflows/sync-arquivo-kronos.yml
+copy README.md README-repo.md
 echo "==> Concluído"

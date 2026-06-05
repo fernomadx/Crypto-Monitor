@@ -50,13 +50,11 @@ arquivo-kronos/
 
 ---
 
-## Atualizar arquivo
+## Atualização automática
 
-```bash
-cd arquivo-kronos && ./sync-from-repo.sh
-git add arquivo-kronos/
-git commit -m "chore: sync arquivo-kronos"
-git push
-```
+| Workflow | Quando roda | O que faz |
+|----------|-------------|-----------|
+| `sync-arquivo-kronos.yml` | Push em `lib/`, `vps/`, infra | Atualiza `codigo/` |
+| `arquivo-kronos-pages.yml` | Push em `arquivo-kronos/` | Publica o site |
 
-O workflow `arquivo-kronos-pages.yml` republica o site no GitHub Pages.
+Manual: `cd arquivo-kronos && ./sync-from-repo.sh`
