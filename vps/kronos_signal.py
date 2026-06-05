@@ -37,7 +37,7 @@ from lib.kronos_alignment import (  # noqa: E402
     should_log_to_scorecard,
     tradeable_for_interval,
 )
-from lib.kronos_levels import compute_trade_levels  # noqa: E402
+from lib.kronos_levels import compute_trade_levels, limit_entry_price  # noqa: E402
 from lib.kronos_tracker import format_scorecard_brief, log_predictions, new_run_id  # noqa: E402
 from lib.mexc_klines import INTERVAL_DELTAS, MEXC_KLINES_MAX_LIMIT, fetch_klines  # noqa: E402
 from lib.telegram import send_kronos_alert, send_kronos_photo  # noqa: E402
@@ -213,12 +213,14 @@ def analyze_symbol(predictor, symbol: str, tf: TimeframeConfig) -> dict:
     pct_short = pct_change_to_bar(pred_df, last_close, bias_idx)
     pct_long = pct_change_to_bar(pred_df, last_close, len(pred_df) - 1)
     bias, icon = bias_from_pct(pct_short)
+    entry_limit = limit_entry_price(last_close, bias)
 
     levels = compute_trade_levels(
-        entry=last_close,
+        entry=entry_limit,
         pred_df=pred_df,
         bias=bias,
         target_bar_index=target_idx,
+        interval=tf.interval,
     )
     pred_close_short = levels.target if levels else float(pred_df["close"].iloc[target_idx])
     pred_close_long = float(pred_df["close"].iloc[-1])
@@ -237,6 +239,7 @@ def analyze_symbol(predictor, symbol: str, tf: TimeframeConfig) -> dict:
         "timeframe": tf.label,
         "interval": tf.interval,
         "last_close": last_close,
+        "entry_limit": entry_limit,
         "candle_time": candle_ts,
         "pred_close": pred_close_short,
         "pred_close_long": pred_close_long,
@@ -360,6 +363,7 @@ def format_timeframe_summary(tf_label: str, results: list[dict], analysis_time: 
         if r["ticker"] != "BTC" and r["ticker"] in corrs:
             corr_txt = f" (corr. BTC {corrs[r['ticker']]:.2f})"
         now_p = _fmt_price(r["last_close"])
+        ent_p = _fmt_price(r.get("entry_limit", r["last_close"]))
         tgt = _fmt_price(r["pred_close"])
         tgt_long = _fmt_price(r["pred_close_long"])
         stp = _fmt_price(r.get("stop_price", r["last_close"]))
@@ -375,6 +379,7 @@ def format_timeframe_summary(tf_label: str, results: list[dict], analysis_time: 
         lines.append(
             f"{r['icon']} <b>{r['ticker']}</b> — {r['bias']}{corr_txt}{trade_badge}\n"
             f"  📍 <b>Preço base:</b> {now_p}\n"
+            f"  💰 <b>Entrada limite:</b> {ent_p}\n"
             f"     <i>último candle MEXC: {candle}</i>\n"
             f"  🎯 <b>Alvo</b> ({target_bars} barras): {tgt} ({'+' if tp >= 0 else ''}{tp:.2f}%)\n"
             f"  🛑 <b>Stop</b> (R:R {rr:.1f}): {stp} ({sp:+.2f}%)\n"
@@ -487,7 +492,8 @@ def run() -> None:
     title = f"Previsão — {now.strftime('%d/%m/%Y %H:%M UTC')}"
     body = format_full_report(summary_sections)
     body = (
-        f"📍 <b>Referência:</b> preço base = último candle MEXC (entrada limite simulada).\n"
+        f"📍 <b>Referência:</b> preço base = último candle MEXC; entrada limite com pullback "
+        f"{os.environ.get('KRONOS_LIMIT_ENTRY_OFFSET_PCT', '0.15')}%.\n"
         f"🎯 <b>Alvo / 🛑 Stop:</b> previsto em mais barras, com R:R mínimo "
         f"(stop menor que o alvo em distância %).\n\n"
         + body

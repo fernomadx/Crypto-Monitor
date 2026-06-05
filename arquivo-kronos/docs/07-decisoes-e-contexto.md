@@ -12,4 +12,4 @@
 - **Relatório diário** — 12:00 BRT (15:00 UTC), ranking 1H/4H/Diário.
 - **SMC backtest** — script educacional, não no cron.
 - **VPS** — agente não tem IP/SSH; install manual ou GitHub Actions.
-- **Qualidade Kronos (2026-06)** — scorecard exige 4H direcional + **3 TFs alinhados** (sem fallback 4H=D com 1H oposto); rejeita alvo contra o modelo; temp 0.65; viés ±0.30%; alvo mín. 0.5%.
+- **Qualidade Kronos (2026-06)** — scorecard exige 4H direcional + **3 TFs alinhados**; alvo = previsão do modelo (sem inflar); R:R 2.0; entrada limite com pullback 0.15%; stop 4H 1.8%; vencimento não passa do stop.
