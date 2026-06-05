@@ -12,3 +12,4 @@
 - **Relatório diário** — 12:00 BRT (15:00 UTC), ranking 1H/4H/Diário.
 - **SMC backtest** — script educacional, não no cron.
 - **VPS** — agente não tem IP/SSH; install manual ou GitHub Actions.
+- **Qualidade Kronos (2026-06)** — scorecard exige 4H direcional + consenso; rejeita alvo contra o modelo; temp 0.65; viés ±0.30%; alvo mín. 0.5%; sim same-bar menos pessimista.

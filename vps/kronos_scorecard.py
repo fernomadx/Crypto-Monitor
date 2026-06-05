@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -35,7 +36,8 @@ def run(force_report: bool = False) -> None:
         pnl = sum(t["pnl_usdc"] for t in short_closed)
         title = f"Scorecard — {gains} gain / {losses} loss (${pnl:+.2f})"
     else:
-        title = "Scorecard semanal — $100 margem 20x"
+        lev = os.environ.get("KRONOS_LEVERAGE", "10")
+        title = f"Scorecard semanal — $100 margem {lev}x"
     send_kronos_alert(title, body)
     logger.info("Scorecard enviado (%d fechadas, weekly=%s)", len(short_closed), weekly)
 

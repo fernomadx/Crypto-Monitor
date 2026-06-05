@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-MIN_TARGET_PCT = float(os.environ.get("KRONOS_MIN_TARGET_PCT", "0.35"))
+MIN_TARGET_PCT = float(os.environ.get("KRONOS_MIN_TARGET_PCT", "0.5"))
 MIN_RR = float(os.environ.get("KRONOS_MIN_RR", "1.5"))
 MAX_STOP_PCT = float(os.environ.get("KRONOS_MAX_STOP_PCT", "1.2"))
 
@@ -52,6 +52,14 @@ def compute_trade_levels(
     idx = min(max(target_bar_index, 0), len(pred_df) - 1)
     raw_target = float(pred_df["close"].iloc[idx])
     long_target = float(pred_df["close"].iloc[-1])
+    raw_pct = _pct_move(entry, raw_target)
+    long_pct = _pct_move(entry, long_target)
+
+    # Modelo prevê movimento oposto no horizonte do alvo → sem trade
+    if bias == "BULLISH" and raw_pct < 0 and long_pct < 0:
+        return None
+    if bias == "BEARISH" and raw_pct > 0 and long_pct > 0:
+        return None
 
     if bias == "BULLISH":
         move_pct = max(_pct_move(entry, raw_target), _pct_move(entry, long_target), min_target_pct)

@@ -68,7 +68,8 @@ def resolve_mexc_symbols() -> list[str]:
     return symbols
 KRONOS_TIMEFRAMES = os.environ.get("KRONOS_TIMEFRAMES", "1h,4h,1d")
 KRONOS_SAMPLE_COUNT = int(os.environ.get("KRONOS_SAMPLE_COUNT", "4"))
-KRONOS_TEMPERATURE = float(os.environ.get("KRONOS_TEMPERATURE", "0.85"))
+KRONOS_TEMPERATURE = float(os.environ.get("KRONOS_TEMPERATURE", "0.65"))
+KRONOS_BIAS_THRESHOLD_PCT = float(os.environ.get("KRONOS_BIAS_THRESHOLD_PCT", "0.30"))
 KRONOS_TOP_P = float(os.environ.get("KRONOS_TOP_P", "0.9"))
 # Viés = poucas barras; alvo de trade = mais barras (evita alvo minúsculo)
 KRONOS_BIAS_BARS = int(os.environ.get("KRONOS_BIAS_BARS", os.environ.get("KRONOS_SHORT_BARS", "4")))
@@ -115,9 +116,10 @@ def future_timestamps(last_ts: pd.Timestamp, pred_len: int, interval: str) -> pd
 
 
 def bias_from_pct(pct: float) -> tuple[str, str]:
-    if pct > 0.15:
+    th = KRONOS_BIAS_THRESHOLD_PCT
+    if pct > th:
         return "BULLISH", "🟢"
-    if pct < -0.15:
+    if pct < -th:
         return "BEARISH", "🔴"
     return "NEUTRO", "⚪"
 
@@ -253,6 +255,7 @@ def analyze_symbol(predictor, symbol: str, tf: TimeframeConfig) -> dict:
         "chart_hist": chart_hist,
         "pred_df": pred_df,
         "split_ts": last_ts,
+        "has_levels": levels is not None,
     }
 
 
@@ -455,7 +458,10 @@ def run() -> None:
         if not results:
             continue
 
-        to_log = [r for r in results if should_log_to_scorecard(tf.interval, r.get("tradeable", False))]
+        to_log = [
+            r for r in results
+            if should_log_to_scorecard(tf.interval, r.get("tradeable", False), r)
+        ]
         if to_log:
             log_predictions(
                 run_id, now, tf.label, tf.interval,
