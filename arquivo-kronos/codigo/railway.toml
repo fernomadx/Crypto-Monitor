@@ -1,0 +1,10 @@
+[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+restartPolicyType = "always"
+restartPolicyMaxRetries = 5
+
+# Volume montado em /data — configure no painel Railway:
+# Settings → Volumes → Mount Path: /data

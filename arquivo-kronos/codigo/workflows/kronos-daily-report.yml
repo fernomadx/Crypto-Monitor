@@ -1,0 +1,37 @@
+# Relatório diário Kronos → Telegram (manual ou agendado).
+# Dados reais exigem DB do Railway; este job só envia se houver secrets + DB copiado.
+# Uso principal: Railway cron vps/kronos_daily_report.py
+
+name: Kronos Daily Report
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: kronos-daily-report
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: "faithful-determination / production"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Send daily report
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          DB_PATH: /tmp/crypto_monitor.db
+        run: python vps/kronos_daily_report.py
