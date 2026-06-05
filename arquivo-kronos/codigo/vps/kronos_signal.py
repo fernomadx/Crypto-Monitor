@@ -28,6 +28,10 @@ import pandas as pd
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
+from lib.kronos_config import apply_v31_defaults  # noqa: E402
+
+apply_v31_defaults()
+
 KRONOS_ROOT = Path(os.environ.get("KRONOS_PATH", REPO_ROOT / "Kronos"))
 sys.path.insert(0, str(KRONOS_ROOT))
 

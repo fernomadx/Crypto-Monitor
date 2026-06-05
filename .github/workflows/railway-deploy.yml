@@ -1,0 +1,37 @@
+# Redeploy Railway (opcional — requer secret RAILWAY_TOKEN)
+# Sem token: Railway redeploya sozinho se repo está conectado no painel.
+
+name: Railway Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'lib/**'
+      - 'vps/**'
+      - 'Dockerfile'
+      - 'crontab'
+      - 'railway.toml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    container: ghcr.io/railwayapp/cli:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy via Railway CLI
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_SERVICE_ID: ${{ secrets.RAILWAY_SERVICE_ID }}
+        run: |
+          if [ -z "$RAILWAY_TOKEN" ]; then
+            echo "::notice::RAILWAY_TOKEN não configurado — confie no auto-deploy do GitHub ou adicione o secret."
+            exit 0
+          fi
+          if [ -n "$RAILWAY_SERVICE_ID" ]; then
+            railway up --ci --service="$RAILWAY_SERVICE_ID"
+          else
+            railway up --ci
+          fi
