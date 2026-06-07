@@ -36,6 +36,23 @@ def configured() -> bool:
     return _api_key() is not None
 
 
+def health_check() -> tuple[bool, str]:
+    """Testa a chave contra a API (não só presença da env var)."""
+    if not configured():
+        return False, "LLMQUANT_API_KEY não configurada"
+    try:
+        snap = crypto_snapshot("BTC-USD")
+        if snap and snap.get("price"):
+            return True, f"API OK · BTC ${float(snap['price']):,.0f}"
+        return False, "API respondeu sem dados"
+    except requests.HTTPError as exc:
+        if exc.response is not None and exc.response.status_code == 401:
+            return False, "chave inválida ou revogada (401)"
+        return False, f"HTTP {exc.response.status_code if exc.response else '?'}"
+    except Exception as exc:
+        return False, str(exc)[:80]
+
+
 def _headers() -> dict[str, str]:
     key = _api_key()
     if not key:
