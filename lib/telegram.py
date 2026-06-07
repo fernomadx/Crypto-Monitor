@@ -158,7 +158,10 @@ def send_quant_reply(chat_id: str, body: str) -> bool:
             },
             timeout=15,
         )
-        return resp.ok
+        if not resp.ok:
+            logger.error("Quant reply error %s: %s", resp.status_code, resp.text[:200])
+            return False
+        return True
     except Exception as exc:
         logger.error("Quant reply failed: %s", exc)
         return False

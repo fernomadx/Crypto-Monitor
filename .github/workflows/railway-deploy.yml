@@ -21,6 +21,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set QUANT variables (se secrets existirem)
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          LLMQUANT_API_KEY: ${{ secrets.LLMQUANT_API_KEY }}
+        run: |
+          if [ -z "$RAILWAY_TOKEN" ] || [ -z "$LLMQUANT_API_KEY" ]; then
+            echo "::notice::LLMQUANT_API_KEY/RAILWAY_TOKEN ausentes — defina LLMQUANT_API_KEY no painel Railway."
+            exit 0
+          fi
+          railway variable set \
+            "LLMQUANT_API_KEY=$LLMQUANT_API_KEY" \
+            QUANT_KRONOS_MODE=warn \
+            QUANT_STATE_PATH=/data/quant_state.json \
+            QUANT_IMPACT_THRESHOLD=0.65 \
+            QUANT_MAX_AGE_HOURS=4
+          echo "::notice::Variáveis QUANT configuradas no Railway"
+
       - name: Deploy via Railway CLI
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}

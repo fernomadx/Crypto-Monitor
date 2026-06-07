@@ -14,12 +14,26 @@ BASE_URL = os.environ.get("LLMQUANT_BASE_URL", "https://api.llmquantdata.com").r
 TIMEOUT = int(os.environ.get("LLMQUANT_TIMEOUT_SEC", "20"))
 
 
+_PLACEHOLDERS = frozenset(
+    {
+        "",
+        "your_llmquant_api_key",
+        "your_llmquant_key",
+        "changeme",
+        "xxx",
+    }
+)
+
+
 def _api_key() -> str | None:
-    return os.environ.get("LLMQUANT_API_KEY", "").strip() or None
+    key = os.environ.get("LLMQUANT_API_KEY", "").strip()
+    if not key or key.lower() in _PLACEHOLDERS or key.startswith("your_"):
+        return None
+    return key
 
 
 def configured() -> bool:
-    return bool(_api_key())
+    return _api_key() is not None
 
 
 def _headers() -> dict[str, str]:

@@ -1,5 +1,10 @@
 #!/bin/sh
-# Após deploy Railway: avisa no Telegram e roda a 1ª previsão.
+# Após deploy Railway: sobe QUANT imediatamente; Kronos avisa após rede + volume.
+set -eu
+
+echo "QUANT boot: garantindo bot..."
+/app/vps/ensure_quant_bot.sh || true
+
 echo "Kronos boot: aguardando 45s (rede + volume)..."
 sleep 45
 
@@ -37,13 +42,4 @@ except Exception as e:
     print("quant boot telegram:", e)
 PY
 
-if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
-  echo "QUANT: skip quant_bot (sem TELEGRAM_*)"
-else
-  if ! pgrep -f "vps/quant_bot.py" >/dev/null 2>&1; then
-    nohup python /app/vps/quant_bot.py >> /data/quant_bot.log 2>&1 &
-    echo "QUANT bot pid $!"
-  else
-    echo "QUANT bot já rodando"
-  fi
-fi
+/app/vps/ensure_quant_bot.sh || true
