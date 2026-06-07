@@ -11,7 +11,7 @@ from lib import news_sources, quant_state
 
 logger = logging.getLogger(__name__)
 
-IMPACT_THRESHOLD = float(os.environ.get("QUANT_IMPACT_THRESHOLD", "0.65"))
+IMPACT_THRESHOLD = float(os.environ.get("QUANT_IMPACT_THRESHOLD", "0.70"))
 HOURLY_MIN_RELEVANCE = float(os.environ.get("QUANT_HOURLY_MIN_RELEVANCE", "0.45"))
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
@@ -30,9 +30,13 @@ _NOISE_HINTS = re.compile(
 )
 
 
-def _impact_alerts_enabled() -> bool:
+def impact_alerts_enabled() -> bool:
     """QUANT_IMPACT_ALERTS=0 — só atualiza estado; alertas vão no digest 1H."""
     return os.environ.get("QUANT_IMPACT_ALERTS", "true").lower() not in ("0", "false", "no", "off")
+
+
+def _impact_alerts_enabled() -> bool:
+    return impact_alerts_enabled()
 
 TICKER_PATTERNS = {
     "BTC": re.compile(r"\b(btc|bitcoin)\b", re.I),

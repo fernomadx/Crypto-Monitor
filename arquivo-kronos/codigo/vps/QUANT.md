@@ -63,11 +63,14 @@ Horário exibido no Telegram: **Irlanda** (`QUANT_DISPLAY_TZ=Europe/Dublin`, com
 
 Ajuste o filtro: `QUANT_HOURLY_MIN_RELEVANCE=0.45` (mais alto = mais rígido).
 
-Desative alertas imediatos e use só o digest:
+Alertas imediatos de **notícia forte** (padrão ON, cron 5 min):
 
 ```env
-QUANT_IMPACT_ALERTS=false
+QUANT_IMPACT_ALERTS=true
+QUANT_IMPACT_THRESHOLD=0.70
 ```
+
+Desative e use só o digest 1H: `QUANT_IMPACT_ALERTS=false`
 
 ### 3. Watcher de alto impacto (opcional, cron 5 min)
 
