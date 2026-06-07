@@ -17,3 +17,8 @@ schedule==1.2.2
 # Utilities
 python-dotenv==1.0.1
 pytz==2024.1
+
+# Backtest
+pandas==2.2.2
+numpy==1.26.4
+ccxt==4.3.80

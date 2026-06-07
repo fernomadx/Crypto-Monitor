@@ -121,6 +121,19 @@ python /app/agents/orchestrator.py
 
 ---
 
+## Backtest — EMA 20/50 + MACD
+
+```bash
+pip install -r requirements.txt
+python3 backtest/run_backtest.py --compare-macd   # todos os modos
+python3 backtest/run_backtest.py --macd-above-zero --macd-hist-rising
+python3 backtest/run_backtest.py --no-macd
+```
+
+Modos MACD: `cross` (padrão), `+zero`, `+hist`, `full` (todos). Ver `--help`.
+
+---
+
 ## Desenvolvimento local
 
 ```bash

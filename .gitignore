@@ -25,7 +25,13 @@ Thumbs.db
 *.log
 logs/
 
+# Backtest outputs
+backtest/results.json
+
 # IDE
 .vscode/
 .idea/
 *.swp
+backtest/results.json
+backtest/results_rsi.json
+backtest/results_equity.json
