@@ -1,5 +1,5 @@
 #!/bin/sh
-# Após deploy Railway: sobe QUANT imediatamente; Kronos avisa após rede + volume.
+# Após deploy Railway: QUANT imediato + daemon Kronos (candle 1H/4H/1D).
 set -eu
 
 echo "QUANT boot: garantindo bot..."
@@ -20,10 +20,9 @@ except Exception as e:
     print("boot telegram:", e)
 PY
 
-echo "Kronos boot: cron assume previsões (evita 2x signal no deploy = OOM)"
-echo "Próximo alerta: minuto 15 a cada 2h UTC (ex. 18:15, 20:15)"
+echo "Kronos boot: iniciando daemon (modelo em RAM, alerta no fechamento do candle)..."
+/app/vps/ensure_kronos_daemon.sh || true
 
-echo "QUANT boot: bot + watcher..."
 python - <<'PY' || true
 import os, sys
 sys.path.insert(0, "/app")
