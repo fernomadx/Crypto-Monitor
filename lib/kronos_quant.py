@@ -8,8 +8,22 @@ from datetime import datetime, timezone
 from lib import quant_state
 
 MAX_AGE_HOURS = float(os.environ.get("QUANT_MAX_AGE_HOURS", "4"))
-VETO_ENABLED = os.environ.get("QUANT_KRONOS_VETO", "1").strip() not in ("0", "false", "no")
 SCORE_INTERVAL = os.environ.get("KRONOS_SCORE_INTERVAL", "4h").strip().lower()
+
+
+def _kronos_mode() -> str:
+    """
+    warn — só aviso no alerta Kronos (bom para testar)
+    veto — bloqueia scorecard 4H se contradiz
+    off  — não altera tradeable (footer mínimo)
+    """
+    mode = os.environ.get("QUANT_KRONOS_MODE", "").strip().lower()
+    if mode in ("warn", "veto", "off"):
+        return mode
+    # legado QUANT_KRONOS_VETO=0/1
+    if os.environ.get("QUANT_KRONOS_VETO", "1").strip() in ("0", "false", "no"):
+        return "warn"
+    return "veto"
 
 
 def _side(bias: str) -> int:
@@ -41,24 +55,22 @@ def ticker_context(ticker: str) -> dict | None:
     return meta
 
 
-def conflicts_with_bias(ticker: str, kronos_bias: str) -> tuple[bool, str]:
-    """True se contexto QUANT contradiz viés do Kronos."""
+def conflict_note(ticker: str, kronos_bias: str) -> str:
+    """Nota se contexto QUANT contradiz viés do Kronos (vazio se ok)."""
     ctx = ticker_context(ticker)
-    if not ctx or not VETO_ENABLED:
-        return False, ""
+    if not ctx or _kronos_mode() == "off":
+        return ""
 
     qb = ctx.get("bias", "NEUTRAL")
     ks = _side(kronos_bias)
     qs = _side(qb)
-    if qs == 0 or ks == 0:
-        return False, ""
+    if qs == 0 or ks == 0 or ks == qs:
+        return ""
 
-    if ks != qs:
-        return True, (
-            f"QUANT {qb} ({ctx.get('impact_score', 0):.0%}) contradiz Kronos {kronos_bias}: "
-            f"{ctx.get('summary', '')[:120]}"
-        )
-    return False, ""
+    return (
+        f"QUANT {qb} ({ctx.get('impact_score', 0):.0%}) contradiz Kronos {kronos_bias}: "
+        f"{ctx.get('summary', '')[:120]}"
+    )
 
 
 def apply_to_results(results_by_interval: dict[str, list[dict]]) -> None:
@@ -67,12 +79,13 @@ def apply_to_results(results_by_interval: dict[str, list[dict]]) -> None:
         if interval.lower() != SCORE_INTERVAL:
             continue
         for r in results:
-            conflict, note = conflicts_with_bias(r["ticker"], r.get("bias", "NEUTRO"))
-            if conflict:
-                r["tradeable"] = False
+            note = conflict_note(r["ticker"], r.get("bias", "NEUTRO"))
+            if note:
                 prev = r.get("align_note") or ""
-                r["align_note"] = f"{prev} | {note}".strip(" |")
+                r["align_note"] = f"{prev} | ⚠️ {note}".strip(" |")
                 r["quant_conflict"] = True
+                if _kronos_mode() == "veto":
+                    r["tradeable"] = False
             else:
                 ctx = ticker_context(r["ticker"])
                 if ctx and _side(ctx.get("bias", "")) == _side(r.get("bias", "")):
@@ -100,9 +113,14 @@ def format_kronos_footer() -> str:
                 f"{ctx.get('summary', '')[:80]}"
             )
 
-    if VETO_ENABLED:
+    mode = _kronos_mode()
+    if mode == "veto":
         lines.append(
-            f"<i>Scorecard {SCORE_INTERVAL.upper()}: veto se QUANT contradiz viés "
+            f"<i>Modo veto — scorecard {SCORE_INTERVAL.upper()} bloqueado se QUANT contradiz "
             f"(janela {MAX_AGE_HOURS:.0f}h).</i>"
+        )
+    elif mode == "warn":
+        lines.append(
+            f"<i>Modo teste (warn) — só aviso, não bloqueia scorecard.</i>"
         )
     return "\n".join(lines)

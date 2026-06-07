@@ -12,11 +12,30 @@ Três peças **separadas** do `[KRONOS]`:
 
 ```bash
 cd /opt/crypto-monitor
+git pull
 cp vps/.env.example vps/.env
 nano vps/.env   # LLMQUANT_API_KEY, TELEGRAM_*, ANTHROPIC_API_KEY, news keys
 ```
 
+### Teste rápido (rode primeiro)
+
+```bash
+chmod +x vps/start_quant.sh
+bash vps/start_quant.sh
+```
+
+Ou só o teste:
+
+```bash
+set -a && source vps/.env && set +a
+vps/.venv/bin/python vps/quant_test.py
+```
+
+No Telegram: `/ping` → deve responder `QUANT online`.
+
 ### 1. Bot sob demanda (sempre ativo)
+
+`start_quant.sh` já sobe o bot. Manual:
 
 ```bash
 set -a && source vps/.env && set +a
@@ -49,7 +68,8 @@ O `kronos_signal.py` já inclui bloco **Contexto QUANT** e veto no scorecard 4H
 | `ANTHROPIC_API_KEY` | Resumo + detecção de impacto |
 | `QUANT_STATE_PATH` | `/data/quant_state.json` (compartilhado com Kronos) |
 | `QUANT_IMPACT_THRESHOLD` | `0.65` — mínimo para alerta |
-| `QUANT_KRONOS_VETO` | `1` — bloqueia scorecard 4H se QUANT contradiz |
+| `QUANT_KRONOS_MODE` | `warn` (teste) / `veto` (produção) / `off` |
+| `QUANT_KRONOS_VETO` | legado `0/1` — use `QUANT_KRONOS_MODE` |
 | `QUANT_MAX_AGE_HOURS` | `4` — janela do contexto no Kronos |
 
 ## Arquitetura
