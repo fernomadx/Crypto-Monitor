@@ -12,9 +12,11 @@ Três peças **separadas** do `[KRONOS]`:
 
 O `railway_boot.sh` sobe o `quant_bot` e o `crontab` roda o `quant_watcher` a cada 5 min.
 
-1. Railway → **Variables** → adicione `LLMQUANT_API_KEY` (e confira `TELEGRAM_*`, `ANTHROPIC_API_KEY`).
+1. Railway → **Variables** → **Raw Editor** → cole `LLMQUANT_API_KEY` + demais `QUANT_*` (ver `.env.example`).
 2. Redeploy (push na `main` ou botão **Deploy**).
-3. Telegram: `[QUANT] Online` → `/ping`.
+3. Telegram: `[QUANT] Online` → `/ping` → `/pesquisa momentum bitcoin`.
+
+O bot sobe via `ensure_quant_bot.sh` (boot + cron a cada 3 min). Se `/ping` falhar, confira `/data/quant_bot.log` no Railway.
 
 Ou rode `bash scripts/railway-configure-quant.sh` com `RAILWAY_TOKEN` + `LLMQUANT_API_KEY`.
 

@@ -44,8 +44,8 @@ _chat="${TELEGRAM_CHAT_ID:-}"
 if [ -z "$_tok" ] || [ -z "$_chat" ] || [[ "$_tok" == *your_* ]] || [[ "$_chat" == *your_* ]]; then
   echo "     SKIP bot — configure TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID em vps/.env"
 else
-  if pgrep -f "vps/quant_bot.py" >/dev/null 2>&1; then
-    echo "     quant_bot já rodando (pid $(pgrep -f 'vps/quant_bot.py' | head -1))"
+  if ps -ef 2>/dev/null | grep -v grep | grep -q '[q]uant_bot.py'; then
+    echo "     quant_bot já rodando"
   else
     nohup "$PY" vps/quant_bot.py >> "$DATA_ROOT/quant_bot.log" 2>&1 &
     echo "     quant_bot pid $! — $DATA_ROOT/quant_bot.log"

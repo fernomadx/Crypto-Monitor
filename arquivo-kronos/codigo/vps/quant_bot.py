@@ -46,8 +46,22 @@ def _allowed_chat() -> str:
 def _api(method: str, **kwargs) -> dict:
     token = _bot_token()
     resp = requests.post(f"https://api.telegram.org/bot{token}/{method}", json=kwargs, timeout=30)
+    if resp.status_code == 409:
+        raise RuntimeError(
+            "Telegram 409: outro processo usa getUpdates neste bot "
+            "(webhook ou segunda instância). Pare duplicatas."
+        )
     resp.raise_for_status()
     return resp.json()
+
+
+def _ensure_polling() -> None:
+    """Remove webhook para permitir getUpdates (comum após deploy)."""
+    try:
+        _api("deleteWebhook", drop_pending_updates=False)
+        logger.info("Telegram: webhook removido — modo polling ativo")
+    except Exception as exc:
+        logger.warning("deleteWebhook: %s", exc)
 
 
 def _load_offset() -> int:
@@ -135,6 +149,7 @@ def run() -> None:
         raise RuntimeError("TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID obrigatórios")
 
     logger.info("QUANT bot ativo (chat %s)", _allowed_chat())
+    _ensure_polling()
     offset = _load_offset()
 
     while True:
