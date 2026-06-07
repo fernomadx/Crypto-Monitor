@@ -21,7 +21,8 @@ except Exception as e:
 PY
 
 echo "Kronos boot: iniciando daemon (modelo em RAM, alerta no fechamento do candle)..."
-/app/vps/ensure_kronos_daemon.sh || true
+KRONOS_DAEMON_NOTIFY=1 nohup python /app/vps/kronos_daemon.py >> /data/kronos_daemon.log 2>&1 &
+echo "kronos_daemon boot pid $! (notify=1)"
 
 python - <<'PY' || true
 import os, sys

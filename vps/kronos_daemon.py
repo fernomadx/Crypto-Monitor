@@ -8,6 +8,7 @@ o texto da previsão sai ~1–3 min após o candle fechar; o gráfico vem em seg
 
 from __future__ import annotations
 
+import fcntl
 import logging
 import os
 import sys
@@ -36,6 +37,30 @@ logger = logging.getLogger(__name__)
 CANDLE_DELAY_SEC = int(os.environ.get("KRONOS_CANDLE_DELAY_SEC", "12"))
 MAX_RETRIES = int(os.environ.get("KRONOS_CANDLE_MAX_RETRIES", "12"))
 RETRY_SLEEP_SEC = int(os.environ.get("KRONOS_CANDLE_RETRY_SEC", "5"))
+DAEMON_LOCK = Path(os.environ.get("KRONOS_DAEMON_LOCK", "/data/kronos_daemon.lock"))
+_singleton_fp = None
+
+
+def _acquire_singleton() -> bool:
+    """Uma instância do daemon por container."""
+    global _singleton_fp
+    DAEMON_LOCK.parent.mkdir(parents=True, exist_ok=True)
+    fp = open(DAEMON_LOCK, "w")
+    try:
+        fcntl.flock(fp.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        fp.close()
+        logger.warning("outro kronos_daemon já ativo — saindo")
+        return False
+    fp.write(str(os.getpid()))
+    fp.flush()
+    _singleton_fp = fp
+    return True
+
+
+def _should_notify_boot() -> bool:
+    """Telegram só no boot do container, não em restart do watchdog."""
+    return os.environ.get("KRONOS_DAEMON_NOTIFY", "0").lower() in ("1", "true", "yes", "on")
 
 
 def next_wake_time(now: datetime) -> datetime:
@@ -97,17 +122,23 @@ def on_candle_close(predictor, wake_at: datetime) -> None:
 
 
 def main() -> None:
+    if not _acquire_singleton():
+        return
+
     logger.info("Daemon Kronos v%s iniciando", RULES_VERSION)
     predictor = load_predictor()
     wake = next_wake_time(datetime.now(timezone.utc))
-    send_kronos_alert(
-        "Modelo pronto",
-        f"<b>Daemon ativo</b> — alertas no fechamento do candle.\n"
-        f"Próximo: <b>{wake.strftime('%H:%M')} UTC</b>\n"
-        f"1H horário · 4H em 0/4/8/12/16/20 · Diário à meia-noite\n"
-        f"<i>Texto da previsão antes do gráfico (~1–3 min após fechar).</i>\n"
-        f"{format_config_footer()}",
-    )
+    if _should_notify_boot():
+        send_kronos_alert(
+            "Modelo pronto",
+            f"<b>Daemon ativo</b> — alertas no fechamento do candle.\n"
+            f"Próximo: <b>{wake.strftime('%H:%M')} UTC</b>\n"
+            f"1H horário · 4H em 0/4/8/12/16/20 · Diário à meia-noite\n"
+            f"<i>Texto da previsão antes do gráfico (~1–3 min após fechar).</i>\n"
+            f"{format_config_footer()}",
+        )
+    else:
+        logger.info("Daemon reiniciado (sem Telegram — KRONOS_DAEMON_NOTIFY=0)")
 
     while True:
         wake_at = next_wake_time(datetime.now(timezone.utc))
@@ -115,12 +146,22 @@ def main() -> None:
         sleep_until(wake_at)
         try:
             on_candle_close(predictor, wake_at)
+            err_stamp = Path(os.environ.get("KRONOS_LAST_ERROR_STAMP", "/data/kronos_last_error.txt"))
+            if err_stamp.exists():
+                err_stamp.unlink(missing_ok=True)
         except Exception as exc:
             logger.exception("Erro no ciclo %s: %s", wake_at, exc)
-            try:
-                send_kronos_alert("Erro daemon", str(exc)[:500])
-            except Exception:
-                pass
+            err_stamp = Path(os.environ.get("KRONOS_LAST_ERROR_STAMP", "/data/kronos_last_error.txt"))
+            err_msg = str(exc)[:500]
+            last_msg = err_stamp.read_text().strip() if err_stamp.exists() else ""
+            # Evita spam do mesmo erro a cada hora
+            if err_msg != last_msg:
+                try:
+                    send_kronos_alert("Erro daemon", err_msg)
+                    err_stamp.parent.mkdir(parents=True, exist_ok=True)
+                    err_stamp.write_text(err_msg)
+                except Exception:
+                    pass
         time.sleep(3)
 
 

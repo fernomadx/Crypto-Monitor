@@ -19,5 +19,6 @@ elif [ "$n" -eq 1 ]; then
   exit 0
 fi
 
-nohup python /app/vps/kronos_daemon.py >> /data/kronos_daemon.log 2>&1 &
-echo "ensure_kronos_daemon: iniciado pid $!"
+# Restart silencioso — Telegram só no boot (railway_boot com KRONOS_DAEMON_NOTIFY=1)
+KRONOS_DAEMON_NOTIFY=0 nohup python /app/vps/kronos_daemon.py >> /data/kronos_daemon.log 2>&1 &
+echo "ensure_kronos_daemon: iniciado pid $! (notify=0)"
