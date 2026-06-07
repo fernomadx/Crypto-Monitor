@@ -19,7 +19,7 @@ apply_v31_defaults()
 from lib.telegram import send_kronos_alert  # noqa: E402
 
 STAMP = Path(os.environ.get("KRONOS_LAST_OK", "/data/kronos.last_ok"))
-MAX_AGE_SEC = int(os.environ.get("KRONOS_WATCHDOG_MAX_AGE", str(3 * 3600 + 1800)))  # 3h30
+MAX_AGE_SEC = int(os.environ.get("KRONOS_WATCHDOG_MAX_AGE", str(90 * 60)))  # 90min (cron 1H)
 
 
 def main() -> None:

@@ -61,7 +61,8 @@ ENV KRONOS_PATH=/app/Kronos \
     QUANT_DISPLAY_TZ=Europe/Dublin
 
 RUN mkdir -p /data /data/kronos/charts /data/huggingface \
-    && chmod +x /app/vps/railway_boot.sh /app/vps/kronos_run.sh /app/vps/ensure_quant_bot.sh \
+    && chmod +x /app/vps/railway_boot.sh /app/vps/kronos_run.sh /app/vps/kronos_candle_cron.sh \
+    /app/vps/kronos_daemon.py /app/vps/ensure_kronos_daemon.sh /app/vps/ensure_quant_bot.sh \
     /app/vps/quant_bot.py /app/vps/quant_watcher.py /app/vps/quant_hourly_news.py 2>/dev/null || true
 
 # supercronic + boot Kronos (1ª execução após deploy)
