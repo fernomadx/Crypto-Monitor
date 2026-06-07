@@ -5,7 +5,7 @@ dockerfilePath = "Dockerfile"
 [deploy]
 restartPolicyType = "always"
 restartPolicyMaxRetries = 5
-# Redeploy: QUANT digest notícias 1H no candle (2026-06-07)
+# Redeploy: QUANT digest só notícias relevantes 1H (2026-06-07)
 
 # Volume montado em /data — configure no painel Railway:
 # Settings → Volumes → Mount Path: /data
