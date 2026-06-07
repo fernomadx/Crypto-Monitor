@@ -56,7 +56,8 @@ ENV KRONOS_PATH=/app/Kronos \
     QUANT_STATE_PATH=/data/quant_state.json \
     QUANT_IMPACT_THRESHOLD=0.65 \
     QUANT_MAX_AGE_HOURS=4 \
-    QUANT_POLL_MINUTES=5
+    QUANT_POLL_MINUTES=5 \
+    QUANT_DISPLAY_TZ=Europe/Dublin
 
 RUN mkdir -p /data /data/kronos/charts /data/huggingface \
     && chmod +x /app/vps/railway_boot.sh /app/vps/kronos_run.sh /app/vps/ensure_quant_bot.sh \
