@@ -38,6 +38,11 @@ MEXC_BASE = "https://api.mexc.com"
 MIN_USD_VALUE = 1.0
 
 
+def _balance_alerts_enabled() -> bool:
+    """MEXC_BALANCE_ALERTS=0 desliga alerta Telegram (Kronos ainda usa candles MEXC)."""
+    return os.environ.get("MEXC_BALANCE_ALERTS", "true").lower() not in ("0", "false", "no", "off")
+
+
 def _sign(params: dict) -> str:
     query = "&".join(f"{k}={v}" for k, v in sorted(params.items()))
     return hmac.new(
@@ -69,6 +74,9 @@ def fetch_btc_price() -> float | None:
 
 def fetch_account_balance() -> None:
     """Requer MEXC_API_KEY + MEXC_API_SECRET (read-only)."""
+    if not _balance_alerts_enabled():
+        logger.info("MEXC balance alerts desativados (MEXC_BALANCE_ALERTS)")
+        return
     if not MEXC_API_KEY or not MEXC_API_SECRET:
         logger.warning("MEXC_API_KEY / MEXC_API_SECRET não configurados, pulando saldo")
         return
