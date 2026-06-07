@@ -5,9 +5,10 @@ from __future__ import annotations
 from datetime import timedelta
 
 import pandas as pd
-import requests
 
-MEXC_BASE = "https://api.mexc.com"
+from lib.mexc_http import MEXC_SPOT_BASE, mexc_get
+
+MEXC_BASE = MEXC_SPOT_BASE
 MEXC_INTERVAL_MAP = {"1h": "60m", "1H": "60m"}
 MEXC_KLINES_MAX_LIMIT = 500
 
@@ -30,12 +31,10 @@ def mexc_interval(interval: str) -> str:
 def fetch_klines(symbol: str, interval: str, limit: int) -> pd.DataFrame:
     api_interval = mexc_interval(interval)
     safe_limit = min(max(int(limit), 1), MEXC_KLINES_MAX_LIMIT)
-    resp = requests.get(
+    resp = mexc_get(
         f"{MEXC_BASE}/api/v3/klines",
         params={"symbol": symbol, "interval": api_interval, "limit": safe_limit},
-        timeout=30,
     )
-    resp.raise_for_status()
     rows = resp.json()
     if not rows:
         raise ValueError(f"Sem candles para {symbol}")
@@ -67,17 +66,19 @@ def fetch_close_at(symbol: str, interval: str, candle_open: pd.Timestamp) -> flo
     margin = delta * 3
     start_ms = int((ts - margin).timestamp() * 1000)
     end_ms = int((ts + margin).timestamp() * 1000)
-    resp = requests.get(
-        f"{MEXC_BASE}/api/v3/klines",
-        params={
-            "symbol": symbol,
-            "interval": api_interval,
-            "startTime": start_ms,
-            "endTime": end_ms,
-            "limit": 20,
-        },
-        timeout=30,
-    )
+    try:
+        resp = mexc_get(
+            f"{MEXC_BASE}/api/v3/klines",
+            params={
+                "symbol": symbol,
+                "interval": api_interval,
+                "startTime": start_ms,
+                "endTime": end_ms,
+                "limit": 20,
+            },
+        )
+    except Exception:
+        return None
     if not resp.ok:
         return None
     rows = resp.json()
@@ -114,7 +115,7 @@ def fetch_klines_range(
     end_ts = _ts_utc(end)
     start_ms = int(start_ts.timestamp() * 1000)
     end_ms = int(end_ts.timestamp() * 1000)
-    resp = requests.get(
+    resp = mexc_get(
         f"{MEXC_BASE}/api/v3/klines",
         params={
             "symbol": symbol,
@@ -123,9 +124,7 @@ def fetch_klines_range(
             "endTime": end_ms,
             "limit": MEXC_KLINES_MAX_LIMIT,
         },
-        timeout=30,
     )
-    resp.raise_for_status()
     rows = resp.json()
     if not rows:
         return pd.DataFrame()

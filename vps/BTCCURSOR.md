@@ -143,7 +143,54 @@ mkdir -p /opt/crypto-monitor/data/huggingface
 
 ---
 
-## 7. Teste
+## 7. Erro `RequestTimeout` — MEXC Análise (futures)
+
+Se o bot **BTCCURSOR** mostrar:
+
+```
+📊 MEXC Análise
+Erro
+RequestTimeout: mexc GET .../api/v1/contract/kline/BTC_USDT?interval=Min60
+```
+
+Isso é a API de **futuros** MEXC (CCXT ou script separado), não o Kronos spot.
+
+**Causa:** timeout curto ou pico de latência MEXC (intermitente).
+
+**Correções no script CCXT/Node (se usar):**
+
+```javascript
+const exchange = new ccxt.mexc({
+  timeout: 45000,
+  enableRateLimit: true,
+});
+// retry manual 3–4x com sleep 2s entre tentativas
+```
+
+**Alternativa Python (neste repo):** `lib/mexc_contract.py` — retry + fallback `contract.mexc.com`:
+
+```bash
+cd /opt/crypto-monitor && git pull
+set -a && source vps/.env && set +a
+vps/.venv/bin/python -c "
+from lib.mexc_contract import fetch_contract_klines
+print(fetch_contract_klines('BTCUSDT','1h',50).tail(2))
+"
+```
+
+Variáveis opcionais no `.env`:
+
+```env
+MEXC_HTTP_TIMEOUT_SEC=45
+MEXC_HTTP_RETRIES=4
+MEXC_CONTRACT_BASE=https://contract.mexc.com
+```
+
+O **Kronos** usa spot (`/api/v3/klines`) — também ganha retry após `git pull` (`lib/mexc_http.py`).
+
+---
+
+## 8. Teste
 
 Mensagem deve chegar **só no bot Kronos**, não no bot do crypto-monitor Railway.
 
