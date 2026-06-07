@@ -5,7 +5,7 @@ dockerfilePath = "Dockerfile"
 [deploy]
 restartPolicyType = "always"
 restartPolicyMaxRetries = 5
-# Redeploy: QUANT alertas imediatos notícia forte + bot ativo
+# Redeploy: fix bot duplicado + /ping com status alertas
 
 # Volume montado em /data — configure no painel Railway:
 # Settings → Volumes → Mount Path: /data
