@@ -51,7 +51,12 @@ ENV KRONOS_PATH=/app/Kronos \
     KRONOS_MAX_STOP_PCT=1.5 \
     KRONOS_CHART_DIR=/data/kronos/charts \
     HF_HOME=/data/huggingface \
-    TRANSFORMERS_CACHE=/data/huggingface
+    TRANSFORMERS_CACHE=/data/huggingface \
+    QUANT_KRONOS_MODE=warn \
+    QUANT_STATE_PATH=/data/quant_state.json \
+    QUANT_IMPACT_THRESHOLD=0.65 \
+    QUANT_MAX_AGE_HOURS=4 \
+    QUANT_POLL_MINUTES=5
 
 RUN mkdir -p /data /data/kronos/charts /data/huggingface \
     && chmod +x /app/vps/railway_boot.sh /app/vps/kronos_run.sh /app/vps/quant_bot.py /app/vps/quant_watcher.py 2>/dev/null || true
