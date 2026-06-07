@@ -14,7 +14,8 @@ npx -y @railway/cli variable set \
   "LLMQUANT_API_KEY=$LLMQUANT_API_KEY" \
   QUANT_KRONOS_MODE=warn \
   QUANT_STATE_PATH=/data/quant_state.json \
-  QUANT_IMPACT_THRESHOLD=0.65 \
+  QUANT_IMPACT_THRESHOLD=0.70 \
+  QUANT_IMPACT_ALERTS=true \
   QUANT_MAX_AGE_HOURS=4
 
 echo "Redeploy..."

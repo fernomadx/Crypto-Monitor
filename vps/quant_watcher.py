@@ -44,7 +44,7 @@ def run() -> None:
         )
         if a.get("url"):
             body += f'\n<a href="{a["url"]}">Fonte</a>'
-        send_quant_alert(f"Notícia de impacto — {direction}", body)
+        send_quant_alert(f"⚡ Notícia forte — {direction}", body)
         logger.info("Alerta QUANT: %s (%.0f%%)", a.get("title", "")[:60], score * 100)
 
 
