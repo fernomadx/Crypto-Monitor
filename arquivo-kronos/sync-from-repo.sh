@@ -29,6 +29,8 @@ copy lib/quant_impact.py
 copy lib/kronos_quant.py
 copy lib/smc_strategy.py
 copy lib/mexc_klines.py
+copy lib/mexc_http.py
+copy lib/mexc_contract.py
 copy lib/telegram.py
 copy lib/db.py
 copy vps/kronos_run.sh
