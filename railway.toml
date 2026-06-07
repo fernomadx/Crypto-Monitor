@@ -5,7 +5,7 @@ dockerfilePath = "Dockerfile"
 [deploy]
 restartPolicyType = "always"
 restartPolicyMaxRetries = 5
-# Redeploy: QUANT env defaults + LLMQUANT via Railway Variables (2026-06-07)
+# Redeploy: QUANT bot watchdog + ensure_quant_bot (2026-06-07)
 
 # Volume montado em /data — configure no painel Railway:
 # Settings → Volumes → Mount Path: /data
