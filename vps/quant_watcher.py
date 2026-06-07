@@ -16,7 +16,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from lib.quant_impact import scan_new_impacts  # noqa: E402
+from lib.quant_impact import _impact_alerts_enabled, scan_new_impacts  # noqa: E402
 from lib.telegram import send_quant_alert  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -27,6 +27,10 @@ def run() -> None:
     alerts = scan_new_impacts()
     if not alerts:
         logger.info("QUANT watcher: sem impacto novo")
+        return
+
+    if not _impact_alerts_enabled():
+        logger.info("QUANT watcher: %d impacto(s) — alertas off (digest 1H)", len(alerts))
         return
 
     for a in alerts:
