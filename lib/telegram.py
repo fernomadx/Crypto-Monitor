@@ -134,6 +134,36 @@ def send_photo(path: str, caption: str = "", parse_mode: str = "HTML") -> bool:
         return False
 
 
+def send_quant_alert(title: str, body: str) -> bool:
+    """Alerta do módulo QUANT — canal separado de KRONOS e sentiment."""
+    text = (
+        f"🧠 <b>[QUANT]</b> {title}\n\n{body}\n\n"
+        "<i>Contexto / pesquisa — não é ordem de trade. "
+        "Use com Kronos e funding.</i>"
+    )
+    return send(text)
+
+
+def send_quant_reply(chat_id: str, body: str) -> bool:
+    """Resposta do bot QUANT (on-demand) para um chat."""
+    try:
+        _, _, base_url = _telegram_config()
+        resp = requests.post(
+            f"{base_url}/sendMessage",
+            json={
+                "chat_id": chat_id,
+                "text": body[:4000],
+                "parse_mode": "HTML",
+                "disable_web_page_preview": True,
+            },
+            timeout=15,
+        )
+        return resp.ok
+    except Exception as exc:
+        logger.error("Quant reply failed: %s", exc)
+        return False
+
+
 def send_kronos_photo(path: str, caption: str) -> bool:
     """Gráfico Kronos via bot dedicado (ou fallback)."""
     text = f"📈 [KRONOS] {caption}"

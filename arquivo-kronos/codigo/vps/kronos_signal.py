@@ -45,6 +45,7 @@ from lib.kronos_alignment import (  # noqa: E402
 from lib.kronos_levels import compute_trade_levels, limit_entry_price  # noqa: E402
 from lib.kronos_tracker import format_scorecard_brief, log_predictions, new_run_id  # noqa: E402
 from lib.mexc_klines import INTERVAL_DELTAS, MEXC_KLINES_MAX_LIMIT, fetch_klines  # noqa: E402
+from lib.kronos_quant import apply_to_results, format_kronos_footer  # noqa: E402
 from lib.telegram import send_kronos_alert, send_kronos_photo  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -462,6 +463,8 @@ def run() -> None:
             r["tradeable"] = ok
             r["align_note"] = note
 
+    apply_to_results(results_by_interval)
+
     for tf in timeframes:
         results = results_by_interval.get(tf.interval, [])
         tf_errors: list[str] = []
@@ -508,6 +511,7 @@ def run() -> None:
 
     if biases_by_ticker:
         body += "\n\n" + format_alignment_report(biases_by_ticker)
+    body += f"\n\n{format_kronos_footer()}"
     body += f"\n\n{format_scorecard_brief(7)}"
     body += f"\n<i>Run ID: {run_id}</i>\n{format_config_footer()}"
 
