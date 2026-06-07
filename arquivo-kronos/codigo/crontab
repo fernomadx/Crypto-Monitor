@@ -25,7 +25,9 @@
 
 # Kronos: daemon no boot (candle 1H horário · 4H · diário) — watchdog reinicia se morrer
 */10 * * * * /app/vps/ensure_kronos_daemon.sh >> /data/kronos_daemon.log 2>&1
-# Watchdog: avisa se ficar >90min sem alerta OK
+# Backup: se daemon falhou, roda kronos_signal ~8 min após fechar candle
+8 * * * * /app/vps/kronos_backup_cron.sh >> /data/kronos.log 2>&1
+# Watchdog: avisa se ficar >90min sem alerta OK (cooldown 4h)
 50 * * * * python /app/vps/kronos_watchdog.py >> /data/kronos_watchdog.log 2>&1
 
 # Kronos scorecard: após fechamentos 4H
