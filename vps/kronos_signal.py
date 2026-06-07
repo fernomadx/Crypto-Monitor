@@ -48,7 +48,7 @@ from lib.kronos_bias_cache import (  # noqa: E402
     merge_with_results,
     update_from_results,
 )
-from lib.kronos_levels import compute_trade_levels, limit_entry_price  # noqa: E402
+from lib.kronos_levels import compute_trade_levels, limit_entry_price, pct_from_entry  # noqa: E402
 from lib.kronos_tracker import format_scorecard_brief, log_predictions, new_run_id  # noqa: E402
 from lib.mexc_klines import INTERVAL_DELTAS, MEXC_KLINES_MAX_LIMIT, fetch_klines  # noqa: E402
 from lib.kronos_quant import apply_to_results, format_kronos_footer  # noqa: E402
@@ -317,10 +317,10 @@ def analyze_symbol(
         "candle_time": candle_ts,
         "pred_close": pred_close_short,
         "pred_close_long": pred_close_long,
-        "stop_price": levels.stop if levels else last_close,
-        "target_pct": levels.target_pct if levels else pct_change_to_bar(pred_df, last_close, target_idx),
-        "stop_pct": levels.stop_pct if levels else 0.0,
-        "trade_rr": levels.rr if levels else 0.0,
+        "stop_price": levels.stop if levels else None,
+        "target_pct": levels.target_pct if levels else None,
+        "stop_pct": levels.stop_pct if levels else None,
+        "trade_rr": levels.rr if levels else None,
         "pct": pct_long,
         "pct_short": pct_short,
         "pct_long": pct_long,
@@ -437,26 +437,42 @@ def format_timeframe_summary(tf_label: str, results: list[dict], analysis_time: 
         if r["ticker"] != "BTC" and r["ticker"] in corrs:
             corr_txt = f" (corr. BTC {corrs[r['ticker']]:.2f})"
         now_p = _fmt_price(r["last_close"])
-        ent_p = _fmt_price(r.get("entry_limit", r["last_close"]))
+        ent = r.get("entry_limit", r["last_close"])
+        ent_p = _fmt_price(ent)
         tgt = _fmt_price(r["pred_close"])
         tgt_long = _fmt_price(r["pred_close_long"])
-        stp = _fmt_price(r.get("stop_price", r["last_close"]))
-        tp = r.get("target_pct", r["pct_short"])
-        sp = r.get("stop_pct", 0.0)
-        rr = r.get("trade_rr", 0.0)
         candle = _fmt_ts(r["candle_time"])
         trade_badge = ""
         if r.get("tradeable"):
             trade_badge = " · ✅ <i>operável</i>"
         elif r.get("align_note"):
             trade_badge = f" · ⚠️ <i>{r['align_note']}</i>"
+
+        level_lines = ""
+        if r.get("has_levels") and r.get("stop_price") is not None:
+            stp = _fmt_price(r["stop_price"])
+            tp = pct_from_entry(ent, r["pred_close"], r["bias"])
+            sp = pct_from_entry(ent, r["stop_price"], r["bias"])
+            rr = abs(tp) / abs(sp) if abs(sp) > 1e-9 else r.get("trade_rr", 0.0)
+            lev = int(os.environ.get("KRONOS_LEVERAGE", "10"))
+            level_lines = (
+                f"  🎯 <b>Alvo</b> ({target_bars} barras): {tgt} "
+                f"({'+' if tp >= 0 else ''}{tp:.2f}% da entrada)\n"
+                f"  🛑 <b>Stop</b> (R:R {rr:.1f}): {stp} ({sp:+.2f}% da entrada)\n"
+                f"     <i>Sim {lev}x: ganho ~{abs(tp)*lev:.1f}% margem · risco ~{abs(sp)*lev:.1f}%</i>\n"
+            )
+        else:
+            level_lines = (
+                "  ⚠️ <b>Sem trade</b> — alvo ML abaixo do mínimo ou stop inviável "
+                f"(R:R {os.environ.get('KRONOS_MIN_RR', '2.0')})\n"
+            )
+
         lines.append(
             f"{r['icon']} <b>{r['ticker']}</b> — {r['bias']}{corr_txt}{trade_badge}\n"
             f"  📍 <b>Preço base:</b> {now_p}\n"
             f"  💰 <b>Entrada limite:</b> {ent_p}\n"
             f"     <i>último candle MEXC: {candle}</i>\n"
-            f"  🎯 <b>Alvo</b> ({target_bars} barras): {tgt} ({'+' if tp >= 0 else ''}{tp:.2f}%)\n"
-            f"  🛑 <b>Stop</b> (R:R {rr:.1f}): {stp} ({sp:+.2f}%)\n"
+            f"{level_lines}"
             f"  📐 Viés curto ({bias_bars}b): {ss}{r['pct_short']:.2f}% · "
             f"ref. longo ({pred_len}b): {tgt_long} ({sl}{r['pct_long']:.2f}%)"
         )
