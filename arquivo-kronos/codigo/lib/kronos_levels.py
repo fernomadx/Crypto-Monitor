@@ -1,8 +1,8 @@
 """
 Níveis de trade Kronos: alvo (take profit) e stop com R:R mínimo.
 
-Alvo = o que o modelo prevê (sem inflar acima da previsão).
-Se o modelo não prevê edge suficiente → sem trade (evita target irreal + stop).
+Regra: |alvo| >= MIN_RR × |stop| sempre (ex. R:R 2:1 → alvo 2× o stop).
+Se o modelo não prevê edge suficiente → sem trade.
 """
 
 from __future__ import annotations
@@ -40,6 +40,17 @@ def _pct_move(entry: float, price: float) -> float:
     return (price - entry) / entry * 100.0
 
 
+def _risk_from_reward(reward: float, entry: float, min_rr: float, stop_cap_pct: float) -> float | None:
+    """Stop = alvo / MIN_RR. Rejeita se stop exceder teto do timeframe."""
+    if reward <= 0 or min_rr <= 0:
+        return None
+    risk = reward / min_rr
+    cap = entry * stop_cap_pct / 100.0
+    if risk > cap + 1e-12:
+        return None
+    return risk
+
+
 def compute_trade_levels(
     *,
     entry: float,
@@ -53,8 +64,8 @@ def compute_trade_levels(
 ) -> TradeLevels | None:
     """
     Define alvo e stop a favor do viés.
-    - Alvo: movimento natural do modelo (teto = stop × R:R).
-    - Sem piso artificial: se modelo < min_target_pct → None.
+    - Alvo: movimento do modelo (limitado a stop_cap × R:R).
+    - Stop: exatamente alvo / MIN_RR (nunca maior que o alvo).
     """
     if bias == "NEUTRO" or entry <= 0 or pred_df.empty:
         return None
@@ -82,7 +93,9 @@ def compute_trade_levels(
             return None
         target = entry * (1 + move_pct / 100.0)
         reward = target - entry
-        risk = min(reward / min_rr, entry * stop_cap / 100.0)
+        risk = _risk_from_reward(reward, entry, min_rr, stop_cap)
+        if risk is None:
+            return None
         stop = entry - risk
         stop_pct = -risk / entry * 100.0
         target_pct = move_pct
@@ -95,12 +108,17 @@ def compute_trade_levels(
             return None
         target = entry * (1 + move_pct / 100.0)
         reward = entry - target
-        risk = min(reward / min_rr, entry * stop_cap / 100.0)
+        risk = _risk_from_reward(reward, entry, min_rr, stop_cap)
+        if risk is None:
+            return None
         stop = entry + risk
         stop_pct = risk / entry * 100.0
         target_pct = move_pct
 
     rr = (reward / risk) if risk > 0 else 0.0
+    if rr < min_rr - 0.05:
+        return None
+
     return TradeLevels(
         target=target,
         stop=stop,
@@ -119,19 +137,19 @@ def compute_stop_from_target(
     max_stop_pct: float = MAX_STOP_PCT,
 ) -> float | None:
     """Recalcula stop a partir de entrada/alvo gravados (previsões antigas)."""
-    if bias == "NEUTRO":
+    if bias == "NEUTRO" or entry <= 0:
         return None
     if bias == "BULLISH":
         reward = target - entry
         if reward <= 0:
             return None
-        risk = min(reward / min_rr, entry * max_stop_pct / 100.0)
-        return entry - risk
+        risk = _risk_from_reward(reward, entry, min_rr, max_stop_pct)
+        return None if risk is None else entry - risk
     reward = entry - target
     if reward <= 0:
         return None
-    risk = min(reward / min_rr, entry * max_stop_pct / 100.0)
-    return entry + risk
+    risk = _risk_from_reward(reward, entry, min_rr, max_stop_pct)
+    return None if risk is None else entry + risk
 
 
 def limit_entry_price(last_close: float, bias: str) -> float:
@@ -142,3 +160,11 @@ def limit_entry_price(last_close: float, bias: str) -> float:
     if bias == "BEARISH":
         return last_close * (1 + offset)
     return last_close
+
+
+def pct_from_entry(entry: float, price: float, bias: str) -> float:
+    """% assinado da entrada até o preço (alvo/stop)."""
+    pct = _pct_move(entry, price)
+    if bias == "BEARISH":
+        return -pct if price < entry else pct
+    return pct

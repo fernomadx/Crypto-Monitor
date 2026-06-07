@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 
-RULES_VERSION = "3.3"
+RULES_VERSION = "3.4"
 
 # Parâmetros v3.1 — aplicados no boot para corrigir vars antigas no painel Railway
 V31_DEFAULTS: dict[str, str] = {
