@@ -133,25 +133,28 @@ def resolve_timeframes(tf_filter: str | None) -> list[TimeframeConfig]:
     return parse_timeframes()
 
 
+def _as_utc_ts(value) -> pd.Timestamp:
+    """Normaliza datetime/Timestamp para UTC (evita tz= em valor já aware)."""
+    ts = pd.Timestamp(value)
+    if ts.tzinfo is None:
+        return ts.tz_localize("UTC")
+    return ts.tz_convert("UTC")
+
+
 def expected_last_candle_open(wake_at: datetime, interval: str) -> pd.Timestamp:
     """open_time do último candle fechado no instante wake_at (UTC)."""
     boundary = wake_at.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
     delta = {"1h": timedelta(hours=1), "4h": timedelta(hours=4), "1d": timedelta(days=1)}
     if interval not in delta:
         raise ValueError(interval)
-    return pd.Timestamp(boundary - delta[interval], tz="UTC")
+    return _as_utc_ts(boundary - delta[interval])
 
 
 def verify_last_candle_closed(last_ts: pd.Timestamp, interval: str) -> None:
     delta = INTERVAL_DELTAS.get(interval)
     if delta is None:
         return
-    ts = pd.Timestamp(last_ts)
-    if ts.tzinfo is None:
-        ts = ts.tz_localize("UTC")
-    else:
-        ts = ts.tz_convert("UTC")
-    close_at = ts + delta
+    close_at = _as_utc_ts(last_ts) + delta
     now = datetime.now(timezone.utc)
     if close_at > now - timedelta(seconds=3):
         raise CandleNotReadyError(
@@ -252,16 +255,8 @@ def analyze_symbol(
     last_ts = hist["timestamps"].iloc[-1]
 
     if expected_candle_open is not None:
-        exp = pd.Timestamp(expected_candle_open)
-        if exp.tzinfo is None:
-            exp = exp.tz_localize("UTC")
-        else:
-            exp = exp.tz_convert("UTC")
-        got = pd.Timestamp(last_ts)
-        if got.tzinfo is None:
-            got = got.tz_localize("UTC")
-        else:
-            got = got.tz_convert("UTC")
+        exp = _as_utc_ts(expected_candle_open)
+        got = _as_utc_ts(last_ts)
         if abs((got - exp).total_seconds()) > 90:
             raise CandleNotReadyError(
                 f"{symbol}@{tf.interval}: esperado candle {exp}, MEXC retornou {got}"
@@ -301,11 +296,7 @@ def analyze_symbol(
     ticker = symbol.replace("USDT", "")
 
     chart_hist = hist.iloc[-tf.chart_bars:][["timestamps", "open", "high", "low", "close"]].copy()
-    candle_ts = pd.Timestamp(last_ts)
-    if candle_ts.tzinfo is None:
-        candle_ts = candle_ts.tz_localize("UTC")
-    else:
-        candle_ts = candle_ts.tz_convert("UTC")
+    candle_ts = _as_utc_ts(last_ts)
 
     return {
         "ticker": ticker,
