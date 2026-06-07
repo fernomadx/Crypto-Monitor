@@ -12,7 +12,22 @@ from lib import news_sources, quant_state
 logger = logging.getLogger(__name__)
 
 IMPACT_THRESHOLD = float(os.environ.get("QUANT_IMPACT_THRESHOLD", "0.65"))
+HOURLY_MIN_RELEVANCE = float(os.environ.get("QUANT_HOURLY_MIN_RELEVANCE", "0.45"))
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+
+# Pré-filtro rápido (evita Haiku em fluff óbvio)
+_RELEVANCE_HINTS = re.compile(
+    r"\b(btc|bitcoin|eth|ethereum|sol|solana|crypto|defi|etf|sec|cftc|fed|fomc|"
+    r"rate|cpi|inflation|hack|exploit|liquidat|bankrupt|approval|ban|regulat|"
+    r"sanction|tariff|war|inflow|outflow|whale|funding|stablecoin|tether|binance|"
+    r"coinbase|blackrock|microstrategy|halving|mining|sec\s|lawsuit|settlement)\b",
+    re.I,
+)
+_NOISE_HINTS = re.compile(
+    r"\b(podcast|opinion|sponsored|nft\s+art|celebrity|meme\s+coin\s+launch|"
+    r"giveaway|airdrop\s+scam|price\s+prediction\s+202[0-9])\b",
+    re.I,
+)
 
 
 def _impact_alerts_enabled() -> bool:
@@ -34,24 +49,44 @@ def detect_tickers(text: str) -> list[str]:
     return found or ["BTC"]
 
 
-def analyze_impact(title: str, url: str = "") -> dict | None:
-    """Retorna dict com bias, score, summary ou None se baixo impacto."""
+def _parse_json_array(text: str) -> list:
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.split("```", 2)[1]
+        if text.startswith("json"):
+            text = text[4:]
+    text = text.strip().rstrip("`")
+    data = json.loads(text)
+    return data if isinstance(data, list) else []
+
+
+def keyword_relevant(title: str) -> bool:
+    """Pré-filtro barato antes do Haiku."""
+    if not title or len(title) < 12:
+        return False
+    if _NOISE_HINTS.search(title):
+        return False
+    return bool(_RELEVANCE_HINTS.search(title))
+
+
+def score_article(title: str) -> dict | None:
+    """Score de uma manchete (sem threshold)."""
     if not ANTHROPIC_API_KEY:
         return None
 
     import anthropic
 
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-    prompt = f"""Analise o impacto desta manchete crypto para trading de curto prazo (1H–4H).
+    prompt = f"""Analise relevância desta manchete para trading crypto curto prazo (1H).
 
 Manchete: "{title}"
 
 Responda APENAS JSON:
 {{
-  "impact_score": <0.0 a 1.0 — 0=irrelevante, 1=choque de mercado>,
+  "impact_score": <0.0 a 1.0 — 0=irrelevante/fluff, 1=choque>,
   "bias": "BULLISH" | "BEARISH" | "NEUTRAL",
-  "summary": "<1 frase em português sobre impacto>",
-  "tickers": ["BTC", "ETH", "SOL" ... afetados]
+  "summary": "<1 frase em português>",
+  "tickers": ["BTC", "ETH", "SOL" ...]
 }}
 """
     try:
@@ -62,8 +97,6 @@ Responda APENAS JSON:
         )
         data = json.loads(msg.content[0].text.strip())
         score = float(data.get("impact_score", 0))
-        if score < IMPACT_THRESHOLD:
-            return None
         tickers = data.get("tickers") or detect_tickers(title)
         return {
             "impact_score": score,
@@ -72,8 +105,67 @@ Responda APENAS JSON:
             "tickers": [str(t).upper() for t in tickers],
         }
     except Exception as exc:
-        logger.error("analyze_impact falhou: %s", exc)
+        logger.error("score_article falhou: %s", exc)
         return None
+
+
+def batch_score_relevance(articles: list[dict], min_score: float) -> list[dict]:
+    """Rankeia manchetes em 1 chamada Haiku; retorna artigos enriquecidos."""
+    candidates = [a for a in articles if keyword_relevant(a.get("title", ""))]
+    if not candidates:
+        return []
+
+    if not ANTHROPIC_API_KEY:
+        return [{**a, "impact_score": 0.5, "bias": "NEUTRAL", "summary": ""} for a in candidates[:8]]
+
+    import anthropic
+
+    lines = "\n".join(f'{i}: {a.get("title", "")[:200]}' for i, a in enumerate(candidates[:20]))
+    prompt = f"""Você filtra notícias RELEVANTES para trading crypto 1H (BTC/ETH/SOL).
+
+Ignore: fluff, opinião vazia, NFT arte, podcasts, previsões longo prazo sem catalisador.
+
+Para cada índice, score 0.0–1.0 de relevância/impacto de mercado.
+
+MANCHETES:
+{lines}
+
+Responda APENAS JSON array (só índices com score >= {min_score}):
+[{{"i": 0, "impact_score": 0.7, "bias": "BULLISH", "summary": "frase PT", "tickers": ["BTC"]}}]
+"""
+    try:
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        msg = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=800,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        ranked = _parse_json_array(msg.content[0].text.strip())
+        out: list[dict] = []
+        for row in ranked:
+            idx = int(row.get("i", -1))
+            score = float(row.get("impact_score", 0))
+            if idx < 0 or idx >= len(candidates) or score < min_score:
+                continue
+            art = dict(candidates[idx])
+            art["impact_score"] = score
+            art["bias"] = row.get("bias", "NEUTRAL")
+            art["summary"] = row.get("summary", "")
+            art["tickers"] = [str(t).upper() for t in (row.get("tickers") or detect_tickers(art.get("title", "")))]
+            out.append(art)
+        out.sort(key=lambda x: x.get("impact_score", 0), reverse=True)
+        return out
+    except Exception as exc:
+        logger.error("batch_score_relevance falhou: %s", exc)
+        return []
+
+
+def analyze_impact(title: str, url: str = "") -> dict | None:
+    """Retorna dict com bias, score, summary ou None se baixo impacto."""
+    scored = score_article(title)
+    if not scored or scored["impact_score"] < IMPACT_THRESHOLD:
+        return None
+    return scored
 
 
 def scan_new_impacts(max_age_minutes: int | None = None) -> list[dict]:

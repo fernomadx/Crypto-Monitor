@@ -57,7 +57,9 @@ nohup vps/.venv/bin/python vps/quant_bot.py >> /data/quant_bot.log 2>&1 &
 
 ### 2. Notícias a cada 1H (fechamento candle)
 
-Cron `1 * * * *` → `quant_hourly_news.py` (resumo Haiku + manchetes + preços LLMQuant).
+Cron `1 * * * *` → `quant_hourly_news.py` (só notícias **relevantes** + resumo Haiku + mercado).
+
+Ajuste o filtro: `QUANT_HOURLY_MIN_RELEVANCE=0.45` (mais alto = mais rígido).
 
 Desative alertas imediatos e use só o digest:
 

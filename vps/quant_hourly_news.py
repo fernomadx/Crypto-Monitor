@@ -51,10 +51,10 @@ def run() -> None:
 
     body = build_digest()
     if not body:
-        logger.info("QUANT hourly: sem manchetes na janela — skip Telegram")
+        logger.info("QUANT hourly: sem notícias relevantes — skip Telegram")
         return
 
-    if send_quant_alert("Notícias 1H — candle fechado", body):
+    if send_quant_alert("Notícias relevantes 1H", body):
         logger.info("QUANT hourly digest enviado")
     else:
         logger.error("QUANT hourly: falha ao enviar Telegram")
