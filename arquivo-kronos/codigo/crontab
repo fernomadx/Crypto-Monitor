@@ -10,7 +10,9 @@
 # News + Sentimento (a cada 10 min)
 */10 * * * * python /app/agents/sentiment.py
 
-# QUANT: notícias de impacto → [QUANT] + estado para Kronos
+# QUANT: digest notícias no fechamento candle 1H (:01 UTC + grace no script)
+1 * * * * python /app/vps/quant_hourly_news.py >> /data/quant_hourly.log 2>&1
+# QUANT: notícias de alto impacto imediato (opcional — QUANT_IMPACT_ALERTS=0 desliga)
 */5 * * * * python /app/vps/quant_watcher.py >> /data/quant_watcher.log 2>&1
 # QUANT bot: watchdog (reinicia se morrer — pgrep não existe no slim)
 */3 * * * * /app/vps/ensure_quant_bot.sh >> /data/quant_bot.log 2>&1
