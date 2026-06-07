@@ -20,6 +20,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from lib.kronos_config import RULES_VERSION, apply_v31_defaults, format_config_footer  # noqa: E402
+from lib.kronos_schedule import CANDLE_DELAY_SEC, format_next_candle_line, next_wake_time  # noqa: E402
 
 apply_v31_defaults()
 
@@ -34,7 +35,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-CANDLE_DELAY_SEC = int(os.environ.get("KRONOS_CANDLE_DELAY_SEC", "12"))
 MAX_RETRIES = int(os.environ.get("KRONOS_CANDLE_MAX_RETRIES", "12"))
 RETRY_SLEEP_SEC = int(os.environ.get("KRONOS_CANDLE_RETRY_SEC", "5"))
 DAEMON_LOCK = Path(os.environ.get("KRONOS_DAEMON_LOCK", "/data/kronos_daemon.lock"))
@@ -61,15 +61,6 @@ def _acquire_singleton() -> bool:
 def _should_notify_boot() -> bool:
     """Telegram só no boot do container, não em restart do watchdog."""
     return os.environ.get("KRONOS_DAEMON_NOTIFY", "0").lower() in ("1", "true", "yes", "on")
-
-
-def next_wake_time(now: datetime) -> datetime:
-    """Próximo instante para rodar após fechamento do candle horário."""
-    boundary = now.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
-    wake = boundary + timedelta(seconds=CANDLE_DELAY_SEC)
-    if now < wake:
-        return wake
-    return boundary + timedelta(hours=1) + timedelta(seconds=CANDLE_DELAY_SEC)
 
 
 def sleep_until(target: datetime) -> None:
@@ -127,12 +118,12 @@ def main() -> None:
 
     logger.info("Daemon Kronos v%s iniciando", RULES_VERSION)
     predictor = load_predictor()
-    wake = next_wake_time(datetime.now(timezone.utc))
+    now_utc = datetime.now(timezone.utc)
     if _should_notify_boot():
         send_kronos_alert(
             "Modelo pronto",
             f"<b>Daemon ativo</b> — alertas no fechamento do candle.\n"
-            f"Próximo: <b>{wake.strftime('%H:%M')} UTC</b>\n"
+            f"{format_next_candle_line(now_utc)}\n"
             f"1H horário · 4H em 0/4/8/12/16/20 · Diário à meia-noite\n"
             f"<i>Texto da previsão antes do gráfico (~1–3 min após fechar).</i>\n"
             f"{format_config_footer()}",
@@ -142,7 +133,12 @@ def main() -> None:
 
     while True:
         wake_at = next_wake_time(datetime.now(timezone.utc))
-        logger.info("Aguardando fechamento candle → %s UTC", wake_at.strftime("%Y-%m-%d %H:%M:%S"))
+        close_at = wake_at - timedelta(seconds=CANDLE_DELAY_SEC)
+        logger.info(
+            "Aguardando fechamento candle %s UTC → wake %s",
+            close_at.strftime("%Y-%m-%d %H:%M"),
+            wake_at.strftime("%H:%M:%S"),
+        )
         sleep_until(wake_at)
         try:
             on_candle_close(predictor, wake_at)

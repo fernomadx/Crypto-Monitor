@@ -19,6 +19,7 @@ copy() {
 
 echo "==> Sync arquivo-kronos/codigo"
 copy lib/kronos_config.py
+copy lib/kronos_schedule.py
 copy lib/kronos_tracker.py
 copy lib/kronos_levels.py
 copy lib/kronos_alignment.py
