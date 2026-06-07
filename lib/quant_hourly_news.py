@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from lib import llmquant_client, news_sources, quant_impact, quant_state
 
@@ -14,7 +15,7 @@ ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 LOOKBACK_MIN = int(os.environ.get("QUANT_HOURLY_LOOKBACK_MIN", "65"))
 MAX_HEADLINES = int(os.environ.get("QUANT_HOURLY_MAX_HEADLINES", "6"))
 MIN_RELEVANCE = float(os.environ.get("QUANT_HOURLY_MIN_RELEVANCE", "0.45"))
-BRT = timezone(timedelta(hours=-3))
+DISPLAY_TZ = ZoneInfo(os.environ.get("QUANT_DISPLAY_TZ", "Europe/Dublin"))
 
 
 def _enabled() -> bool:
@@ -73,11 +74,15 @@ def _market_lines() -> list[str]:
 
 
 def _format_header(now_utc: datetime, count: int) -> str:
-    now_brt = now_utc.astimezone(BRT)
+    local = now_utc.astimezone(DISPLAY_TZ)
+    # Irlanda: IST (inverno UTC+0) / IST verão (UTC+1) — zoneinfo aplica DST
+    tz_label = "Irlanda"
+    if str(DISPLAY_TZ) != "Europe/Dublin":
+        tz_label = str(DISPLAY_TZ).split("/")[-1].replace("_", " ")
     return (
         f"<b>Notícias relevantes 1H</b> ({count})\n"
-        f"🕐 candle fechado · {now_utc.strftime('%H:%M')} UTC · "
-        f"{now_brt.strftime('%H:%M')} BRT"
+        f"🕐 candle fechado · {local.strftime('%H:%M')} {tz_label} · "
+        f"{now_utc.strftime('%H:%M')} UTC"
     )
 
 
