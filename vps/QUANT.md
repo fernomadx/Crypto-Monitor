@@ -8,6 +8,16 @@ Três peças **separadas** do `[KRONOS]`:
 | **Alertas** | `vps/quant_watcher.py` | Notícia de impacto → Telegram `[QUANT]` |
 | **Kronos** | `lib/kronos_quant.py` | Lê estado e pode **vetar** scorecard 4H se contexto contradiz |
 
+## Setup Railway (mesmo container do Kronos)
+
+O `railway_boot.sh` sobe o `quant_bot` e o `crontab` roda o `quant_watcher` a cada 5 min.
+
+1. Railway → **Variables** → adicione `LLMQUANT_API_KEY` (e confira `TELEGRAM_*`, `ANTHROPIC_API_KEY`).
+2. Redeploy (push na `main` ou botão **Deploy**).
+3. Telegram: `[QUANT] Online` → `/ping`.
+
+Ou rode `bash scripts/railway-configure-quant.sh` com `RAILWAY_TOKEN` + `LLMQUANT_API_KEY`.
+
 ## Setup Hetzner (recomendado)
 
 ```bash
