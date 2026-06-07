@@ -23,6 +23,34 @@ def _wiki_usable(title: str, summary: str) -> bool:
     return cjk < max(len(blob) * 0.25, 8)
 
 
+def _sanitize_answer(text: str) -> str:
+    """Remove secções académicas que o modelo insiste em gerar."""
+    lines: list[str] = []
+    skip = False
+    for line in text.splitlines():
+        low = line.lower().strip()
+        if any(
+            k in low
+            for k in (
+                "falta no contexto",
+                "o que falta",
+                "falta:",
+                "missing context",
+                "dados em falta",
+            )
+        ):
+            skip = True
+            continue
+        if skip and (line.startswith("•") or line.startswith("-") or not line.strip()):
+            if not line.strip():
+                skip = False
+            continue
+        skip = False
+        lines.append(line)
+    out = "\n".join(lines).strip()
+    return re.sub(r"\n{3,}", "\n\n", out)
+
+
 def _haiku_synthesize(query: str, context_blocks: list[str]) -> str:
     if not ANTHROPIC_API_KEY:
         return "\n\n".join(context_blocks)[:2800]
@@ -31,38 +59,34 @@ def _haiku_synthesize(query: str, context_blocks: list[str]) -> str:
 
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     ctx = "\n\n---\n\n".join(context_blocks)[:10000]
-    prompt = f"""Você é analista quant crypto no Telegram. Pergunta do utilizador:
-"{query}"
+    prompt = f"""Analista crypto no Telegram. Pergunta: "{query}"
 
-Use APENAS o contexto (Quant Wiki, papers, preços). Responda em português, curto para telemóvel (~900 caracteres máx.).
+CONTEXTO (use só isto):
+{ctx}
 
-Formato (HTML simples — use <b> nos títulos das secções):
+Responda em português. MÁXIMO 700 caracteres no total. Sem parágrafos longos.
 
-📊 <b>Mercado agora</b>
-• BTC, ETH, SOL: preço e variação 24h (só números do contexto)
+Copie EXATAMENTE esta estrutura (3 secções, nada mais):
 
-💡 <b>Leitura para trade</b>
-• 2–3 bullets objetivos (momentum, risco, correlação) — linguagem de trader, não tese académica
+📊 <b>Mercado</b>
+BTC $X (+Y% 24h) · ETH $X (+Y%) · SOL $X (+Y%)
+
+💡 <b>Leitura</b>
+• (1 frase: momentum / rotação altcoins)
+• (1 frase: risco — stop/disciplina)
 
 📚 <b>Fontes</b>
-• 2–4 linhas curtas: [Paper: título] ou [Wiki: título em PT se possível]
+• [Paper: nome curto] · [Wiki: nome curto]
 
-Regras:
-- Não invente números
-- Não faça secção longa "o que falta" — no máximo 1 frase no fim se for crítico
-- Títulos de papers/wiki em inglês/chinês: cite o original, traduza brevemente entre parênteses se útil
-- Isto é contexto, não ordem de trade
-
-CONTEXTO:
-{ctx}
+PROIBIDO: listar dados em falta, volume, IV, correlação histórica, janelas 20d/60d, secção "falta no contexto", mais de 2 bullets em Leitura, citar ML/Random Forest salvo se for 1 linha na Leitura.
 """
     try:
         msg = client.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=550,
+            max_tokens=380,
             messages=[{"role": "user", "content": prompt}],
         )
-        return msg.content[0].text.strip()
+        return _sanitize_answer(msg.content[0].text.strip())[:1100]
     except Exception as exc:
         logger.error("Haiku research falhou: %s", exc)
         return "\n\n".join(context_blocks)[:2800]
@@ -78,46 +102,40 @@ def gather_context(query: str) -> tuple[list[str], list[str]]:
         return blocks, notes
 
     try:
-        for hit in llmquant_client.wiki_search(query, top_k=3):
+        for hit in llmquant_client.wiki_search(query, top_k=2):
             title = hit.get("title", "Wiki")
-            summary = hit.get("summary", "")
-            wid = hit.get("wikiItemId")
-            extra = ""
-            if wid and _wiki_usable(title, summary):
-                full = llmquant_client.wiki_read(wid, max_length=900)
-                if full:
-                    extra = (full.get("body_markdown") or "")[:900]
-            blocks.append(f"[Wiki: {title}]\n{summary}\n{extra}".strip())
+            summary = (hit.get("summary") or "")[:400]
+            if _wiki_usable(title, summary):
+                blocks.append(f"[Wiki: {title}] {summary}".strip())
     except Exception as exc:
         logger.warning("wiki_search: %s", exc)
         notes.append(f"Wiki indisponível: {exc}")
 
     try:
-        papers = llmquant_client.paper_search(query, top_k=2)
+        papers = llmquant_client.paper_search(query, top_k=1)
         for p in papers:
             title = p.get("title") or p.get("paperCardId", "Paper")
-            card = p.get("paperCardId")
-            snippet = p.get("summary") or p.get("abstract") or ""
-            if card:
-                body = llmquant_client.paper_read(card, sections=["introduction", "conclusion"])
-                if body:
-                    for sec in body.get("sections") or []:
-                        snippet += "\n" + (sec.get("content") or "")[:600]
-            blocks.append(f"[Paper: {title}]\n{snippet[:1500]}".strip())
+            snippet = (p.get("summary") or p.get("abstract") or "")[:350]
+            blocks.append(f"[Paper: {title}] {snippet}".strip())
     except Exception as exc:
         logger.warning("paper_search: %s", exc)
         notes.append(f"Papers indisponíveis: {exc}")
 
+    market: list[str] = []
     for sym in ("BTC-USD", "ETH-USD", "SOL-USD"):
         try:
             snap = llmquant_client.crypto_snapshot(sym)
             if snap:
-                blocks.append(
-                    f"[Mercado {sym}] ${snap.get('price', 0):,.2f} "
+                market.append(
+                    f"{sym} ${snap.get('price', 0):,.2f} "
                     f"({snap.get('dayChangePercent', 0):+.2f}% 24h)"
                 )
         except Exception as exc:
             logger.debug("snapshot %s: %s", sym, exc)
+
+    # Preços primeiro — o modelo prioriza mercado sobre papers
+    if market:
+        blocks[:0] = ["[Preços ao vivo] " + " · ".join(market)]
 
     return blocks, notes
 
@@ -137,7 +155,7 @@ def research(query: str) -> str:
     answer = _haiku_synthesize(query, blocks)
     if notes:
         answer += "\n\n<i>" + " · ".join(notes) + "</i>"
-    return answer[:3200]
+    return answer[:1400]
 
 
 def format_for_telegram(query: str, answer: str) -> str:
