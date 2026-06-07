@@ -150,13 +150,68 @@ def expected_last_candle_open(wake_at: datetime, interval: str) -> pd.Timestamp:
     return _as_utc_ts(boundary - delta[interval])
 
 
-def verify_last_candle_closed(last_ts: pd.Timestamp, interval: str) -> None:
+def _interval_delta(interval: str) -> timedelta:
     delta = INTERVAL_DELTAS.get(interval)
     if delta is None:
-        return
-    close_at = _as_utc_ts(last_ts) + delta
+        raise ValueError(f"Intervalo não suportado: {interval}")
+    return delta
+
+
+def _is_candle_closed(open_ts: pd.Timestamp, interval: str, *, grace_sec: int = 3) -> bool:
     now = datetime.now(timezone.utc)
-    if close_at > now - timedelta(seconds=3):
+    close_at = _as_utc_ts(open_ts) + _interval_delta(interval)
+    return close_at <= now - timedelta(seconds=grace_sec)
+
+
+def _closed_candle_end_index(
+    df: pd.DataFrame,
+    interval: str,
+    expected_open: pd.Timestamp | None = None,
+) -> int:
+    """
+    Índice do último candle FECHADO no DataFrame MEXC.
+
+    Após :00 UTC a API costuma incluir o candle novo (ainda aberto) como última linha.
+    """
+    if df.empty:
+        raise CandleNotReadyError("sem candles MEXC")
+
+    delta = _interval_delta(interval)
+    exp = _as_utc_ts(expected_open) if expected_open is not None else None
+
+    if exp is not None:
+        for i in range(len(df) - 1, -1, -1):
+            open_ts = _as_utc_ts(df["timestamps"].iloc[i])
+            if abs((open_ts - exp).total_seconds()) > 90:
+                continue
+            if _is_candle_closed(open_ts, interval):
+                return i
+            raise CandleNotReadyError(
+                f"candle {interval.upper()} {open_ts} ainda aberto (aguardando fechamento)"
+            )
+
+        last_open = _as_utc_ts(df["timestamps"].iloc[-1])
+        # Última barra = candle seguinte ao esperado (comum logo após fechar)
+        if abs((last_open - (exp + delta)).total_seconds()) <= 90 and len(df) >= 2:
+            prev_i = len(df) - 2
+            prev_open = _as_utc_ts(df["timestamps"].iloc[prev_i])
+            if abs((prev_open - exp).total_seconds()) <= 90 and _is_candle_closed(prev_open, interval):
+                return prev_i
+
+        raise CandleNotReadyError(
+            f"esperado candle {exp}, MEXC último {_as_utc_ts(df['timestamps'].iloc[-1])}"
+        )
+
+    for i in range(len(df) - 1, -1, -1):
+        if _is_candle_closed(df["timestamps"].iloc[i], interval):
+            return i
+    raise CandleNotReadyError(f"nenhum candle {interval.upper()} fechado na resposta MEXC")
+
+
+def verify_last_candle_closed(last_ts: pd.Timestamp, interval: str) -> None:
+    if not _is_candle_closed(last_ts, interval):
+        now = datetime.now(timezone.utc)
+        close_at = _as_utc_ts(last_ts) + _interval_delta(interval)
         raise CandleNotReadyError(
             f"candle {interval.upper()} ainda aberto (fecha em {int((close_at - now).total_seconds())}s)"
         )
@@ -247,20 +302,16 @@ def analyze_symbol(
     need = tf.lookback + 5
     df = fetch_klines(symbol, tf.interval, limit=min(need, MEXC_KLINES_MAX_LIMIT))
 
-    if len(df) < tf.lookback + 1:
-        raise ValueError(f"{symbol}@{tf.interval}: candles insuficientes ({len(df)} < {tf.lookback})")
+    end_i = _closed_candle_end_index(df, tf.interval, expected_candle_open)
+    closed = df.iloc[: end_i + 1]
+    if len(closed) < tf.lookback + 1:
+        raise CandleNotReadyError(
+            f"{symbol}@{tf.interval}: candles fechados insuficientes ({len(closed)} < {tf.lookback + 1})"
+        )
 
-    hist = df.iloc[-tf.lookback:].reset_index(drop=True)
+    hist = closed.iloc[-tf.lookback:].reset_index(drop=True)
     last_close = float(hist["close"].iloc[-1])
     last_ts = hist["timestamps"].iloc[-1]
-
-    if expected_candle_open is not None:
-        exp = _as_utc_ts(expected_candle_open)
-        got = _as_utc_ts(last_ts)
-        if abs((got - exp).total_seconds()) > 90:
-            raise CandleNotReadyError(
-                f"{symbol}@{tf.interval}: esperado candle {exp}, MEXC retornou {got}"
-            )
     verify_last_candle_closed(last_ts, tf.interval)
 
     x_df = hist[["open", "high", "low", "close", "volume", "amount"]]
