@@ -1,0 +1,40 @@
+# Publica arquivo-kronos/ na branch gh-pages (GitHub Pages)
+# URL após repo público + Settings → Pages → branch gh-pages / root:
+# https://fernomadx.github.io/Crypto-Monitor/
+
+name: Arquivo Kronos — GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'arquivo-kronos/**'
+      - '.github/workflows/arquivo-kronos-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync código para arquivo-kronos
+        run: bash arquivo-kronos/sync-from-repo.sh
+
+      - name: Publicar em gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./arquivo-kronos
+          publish_branch: gh-pages
+          force_orphan: true
+          user_name: github-actions[bot]
+          user_email: github-actions[bot]@users.noreply.github.com
+          commit_message: 'deploy: arquivo-kronos'

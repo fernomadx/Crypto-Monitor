@@ -1,0 +1,11 @@
+[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+restartPolicyType = "always"
+restartPolicyMaxRetries = 5
+# Redeploy: Kronos daemon alerta 1H no fechamento do candle
+
+# Volume montado em /data — configure no painel Railway:
+# Settings → Volumes → Mount Path: /data

@@ -1,0 +1,20 @@
+# Crontab VPS BTCCURSOR — bot KRONOS_TELEGRAM_* (separado do Railway)
+# crontab -e  e cole:
+
+SHELL=/bin/bash
+PATH=/usr/local/bin:/usr/bin:/bin
+
+# A cada 1h — previsão + gráficos
+15 * * * * /opt/crypto-monitor/vps/run_kronos.sh >> /var/log/kronos_signal.log 2>&1
+
+# Scorecard (fecha trades maduros)
+30 * * * * set -a && . /opt/crypto-monitor/vps/.env && set +a && cd /opt/crypto-monitor && /opt/crypto-monitor/vps/.venv/bin/python vps/kronos_scorecard.py >> /var/log/kronos_scorecard.log 2>&1
+
+# Relatório diário 12:00 Brasília (15:00 UTC)
+0 15 * * * set -a && . /opt/crypto-monitor/vps/.env && set +a && cd /opt/crypto-monitor && /opt/crypto-monitor/vps/.venv/bin/python vps/kronos_daily_report.py >> /var/log/kronos_daily_report.log 2>&1
+
+# QUANT: notícias de impacto → [QUANT] (estado em /data/quant_state.json)
+*/5 * * * * set -a && . /opt/crypto-monitor/vps/.env && set +a && cd /opt/crypto-monitor && /opt/crypto-monitor/vps/.venv/bin/python vps/quant_watcher.py >> /var/log/quant_watcher.log 2>&1
+
+# QUANT bot: vps/start_quant.sh sobe no boot (não precisa cron)
+# QUANT watcher: vps/install_quant_crontab.sh (ou start_quant.sh)

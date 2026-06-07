@@ -1,0 +1,39 @@
+# crypto-monitor supercronic crontab
+# Formato: minuto hora dia mês diasemana comando
+
+# Hyperliquid: funding rates + posições (a cada 15 min)
+*/15 * * * * python /app/agents/hyperliquid.py
+
+# MEXC: carteira + BTC price (a cada 15 min)
+*/15 * * * * python /app/agents/mexc.py
+
+# News + Sentimento (a cada 10 min)
+*/10 * * * * python /app/agents/sentiment.py
+
+# QUANT: digest notícias no fechamento candle 1H (:01 UTC + grace no script)
+1 * * * * python /app/vps/quant_hourly_news.py >> /data/quant_hourly.log 2>&1
+# QUANT: notícias de alto impacto imediato (opcional — QUANT_IMPACT_ALERTS=0 desliga)
+*/5 * * * * python /app/vps/quant_watcher.py >> /data/quant_watcher.log 2>&1
+# QUANT bot: watchdog (reinicia se morrer — pgrep não existe no slim)
+*/3 * * * * /app/vps/ensure_quant_bot.sh >> /data/quant_bot.log 2>&1
+
+# Polymarket scanner (a cada 30 min)
+*/30 * * * * python /app/agents/polymarket.py
+
+# Consensus orchestrator (a cada 4h, na hora cheia)
+0 */4 * * * python /app/agents/orchestrator.py
+
+# Kronos: daemon no boot (candle 1H horário · 4H · diário) — watchdog reinicia se morrer
+*/10 * * * * /app/vps/ensure_kronos_daemon.sh >> /data/kronos_daemon.log 2>&1
+# Backup: se daemon falhou, roda kronos_signal ~8 min após fechar candle
+8 * * * * /app/vps/kronos_backup_cron.sh >> /data/kronos.log 2>&1
+# Watchdog: avisa se ficar >90min sem alerta OK (cooldown 4h)
+50 * * * * python /app/vps/kronos_watchdog.py >> /data/kronos_watchdog.log 2>&1
+
+# Kronos scorecard: após fechamentos 4H
+15 0,4,8,12,16,20 * * * python /app/vps/kronos_scorecard.py >> /data/kronos_scorecard.log 2>&1
+# Relatório completo semanal (domingo 12:30 UTC)
+30 12 * * 0 python /app/vps/kronos_scorecard.py --weekly >> /data/kronos_scorecard.log 2>&1
+
+# Kronos: relatório diário no Telegram — 12:00 horário de Brasília (15:00 UTC)
+0 15 * * * python /app/vps/kronos_daily_report.py >> /data/kronos_daily_report.log 2>&1

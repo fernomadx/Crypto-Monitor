@@ -1,0 +1,2 @@
+# Kronos — alerta [KRONOS] a cada 4h (serviço Railway separado, mesmas env vars do projeto)
+0 */4 * * * python /app/vps/kronos_signal.py
