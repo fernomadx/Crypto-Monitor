@@ -10,6 +10,9 @@
 # News + Sentimento (a cada 10 min)
 */10 * * * * python /app/agents/sentiment.py
 
+# QUANT: notícias de impacto → [QUANT] + estado para Kronos
+*/5 * * * * python /app/vps/quant_watcher.py >> /data/quant_watcher.log 2>&1
+
 # Polymarket scanner (a cada 30 min)
 */30 * * * * python /app/agents/polymarket.py
 

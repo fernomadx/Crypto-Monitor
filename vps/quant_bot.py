@@ -70,7 +70,7 @@ def _help_text() -> str:
         "/quant ou /contexto — notícias de impacto recentes\n"
         "/pesquisa &lt;pergunta&gt; — pesquisa Quant Wiki + papers\n"
         "/btc · /eth · /sol — preço + contexto\n"
-        "/ping — teste de conexão\n"
+        "/ping — teste de conexão (também aceita /pin)\n"
         "/help — esta ajuda\n\n"
         "<i>Canal [QUANT] separado do [KRONOS]. "
         "Configure LLMQUANT_API_KEY para pesquisa completa.</i>"
@@ -112,7 +112,7 @@ def _dispatch(text: str) -> str:
 
     if cmd in ("/start", "/help"):
         return _help_text()
-    if cmd == "/ping":
+    if cmd in ("/ping", "/pin"):
         api = "✅ LLMQuant" if llmquant_client.configured() else "⚠️ sem LLMQUANT_API_KEY"
         return f"<b>QUANT online</b>\n{api}\nModo Kronos: <code>{os.environ.get('QUANT_KRONOS_MODE', 'warn')}</code>"
     if cmd in ("/quant", "/contexto"):
