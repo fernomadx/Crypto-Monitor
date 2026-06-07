@@ -8,8 +8,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-STATE_PATH = Path(os.environ.get("QUANT_STATE_PATH", "/data/quant_state.json"))
 MAX_SEEN_URLS = int(os.environ.get("QUANT_MAX_SEEN_URLS", "500"))
+
+
+def _state_path() -> Path:
+    return Path(os.environ.get("QUANT_STATE_PATH", "/data/quant_state.json"))
 
 
 def _empty() -> dict[str, Any]:
@@ -27,10 +30,11 @@ def _empty() -> dict[str, Any]:
 
 
 def load() -> dict[str, Any]:
-    if not STATE_PATH.exists():
+    path = _state_path()
+    if not path.exists():
         return _empty()
     try:
-        data = json.loads(STATE_PATH.read_text())
+        data = json.loads(path.read_text())
         for key, default in _empty().items():
             data.setdefault(key, default if not isinstance(default, dict) else {})
         return data
@@ -40,8 +44,9 @@ def load() -> dict[str, Any]:
 
 def save(data: dict[str, Any]) -> None:
     data["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    STATE_PATH.write_text(json.dumps(data, indent=2))
+    path = _state_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2))
 
 
 def remember_url(data: dict[str, Any], url: str) -> None:

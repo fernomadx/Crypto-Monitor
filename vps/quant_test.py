@@ -20,20 +20,25 @@ def main() -> int:
 
     # 1) LLMQuant API
     if llmquant_client.configured():
-        try:
-            hits = llmquant_client.wiki_search("bitcoin momentum", top_k=1)
-            print(f"[OK] LLMQuant wiki_search: {len(hits)} hit(s)")
-            if hits:
-                print(f"     → {hits[0].get('title', '?')}")
-        except Exception as exc:
-            print(f"[FAIL] LLMQuant: {exc}")
-            ok = False
+        key = os.environ.get("LLMQUANT_API_KEY", "")
+        if key.startswith("your_") or key == "your_llmquant_api_key":
+            print("[SKIP] LLMQUANT_API_KEY ainda é placeholder no .env")
+        else:
+            try:
+                hits = llmquant_client.wiki_search("bitcoin momentum", top_k=1)
+                print(f"[OK] LLMQuant wiki_search: {len(hits)} hit(s)")
+                if hits:
+                    print(f"     → {hits[0].get('title', '?')}")
+            except Exception as exc:
+                print(f"[FAIL] LLMQuant: {exc}")
+                ok = False
     else:
         print("[SKIP] LLMQUANT_API_KEY não definida")
 
     # 2) Estado + hook Kronos (simulado)
-    state_path = Path(os.environ.get("QUANT_STATE_PATH", "/tmp/quant_state_test.json"))
-    os.environ["QUANT_STATE_PATH"] = str(state_path)
+    if not os.environ.get("QUANT_STATE_PATH"):
+        os.environ["QUANT_STATE_PATH"] = str(REPO_ROOT / "data" / "quant_state_test.json")
+    state_path = Path(os.environ["QUANT_STATE_PATH"])
     data = quant_state.load()
     quant_state.set_ticker_impact(
         data,
@@ -64,16 +69,22 @@ def main() -> int:
     print(format_kronos_footer().replace("<b>", "").replace("</b>", "").replace("<i>", "").replace("</i>", ""))
 
     # 3) Telegram (opcional)
-    if os.environ.get("TELEGRAM_BOT_TOKEN") and os.environ.get("TELEGRAM_CHAT_ID"):
+    tok = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    chat = os.environ.get("TELEGRAM_CHAT_ID", "")
+    if tok and chat and "your_" not in tok and "your_" not in chat:
         try:
             from lib.telegram import send_quant_alert
 
-            send_quant_alert("Teste QUANT", "Integração OK — pode usar /pesquisa e /quant no bot.")
-            print("\n[OK] Telegram [QUANT] enviado")
+            if send_quant_alert("Teste QUANT", "Integração OK — pode usar /pesquisa e /quant no bot."):
+                print("\n[OK] Telegram [QUANT] enviado")
+            else:
+                print("\n[WARN] Telegram: API retornou erro")
+                ok = False
         except Exception as exc:
             print(f"\n[WARN] Telegram: {exc}")
+            ok = False
     else:
-        print("\n[SKIP] Telegram — defina TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID")
+        print("\n[SKIP] Telegram — tokens reais em vps/.env")
 
     print("\n=== Fim ===")
     return 0 if ok else 1

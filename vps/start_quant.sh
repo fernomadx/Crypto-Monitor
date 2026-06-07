@@ -1,36 +1,63 @@
 #!/usr/bin/env bash
-# Sobe QUANT no Hetzner: teste → bot → lembrete cron watcher
+# Sobe QUANT completo — sem prompts (Hetzner / VPS).
 set -euo pipefail
 
-REPO_DIR="${REPO_DIR:-/opt/crypto-monitor}"
+REPO_DIR="${REPO_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 cd "$REPO_DIR"
 
-if [ ! -f vps/.env ]; then
-  echo "Crie vps/.env a partir de vps/.env.example"
-  exit 1
+ENV_FILE="${QUANT_ENV_FILE:-$REPO_DIR/vps/.env}"
+if [ ! -f "$ENV_FILE" ] && [ -f /data/quant.env ]; then
+  ENV_FILE=/data/quant.env
+fi
+if [ ! -f "$ENV_FILE" ]; then
+  cp "$REPO_DIR/vps/.env.example" "$REPO_DIR/vps/.env"
+  ENV_FILE="$REPO_DIR/vps/.env"
+  echo "AVISO: criado $ENV_FILE — preencha chaves se alertas não chegarem"
 fi
 
 set -a
-source vps/.env
+# shellcheck source=/dev/null
+source "$ENV_FILE"
 set +a
 
-PY="${REPO_DIR}/vps/.venv/bin/python"
-mkdir -p /data /var/log
-
-echo "==> 1/3 Teste QUANT"
-"$PY" vps/quant_test.py
-
-echo "==> 2/3 Bot on-demand (quant_bot)"
-if pgrep -f "vps/quant_bot.py" >/dev/null 2>&1; then
-  echo "     quant_bot já rodando (pid $(pgrep -f 'vps/quant_bot.py' | head -1))"
-else
-  nohup "$PY" vps/quant_bot.py >> /data/quant_bot.log 2>&1 &
-  echo "     iniciado pid $! — log /data/quant_bot.log"
+PY="${PY:-$REPO_DIR/vps/.venv/bin/python}"
+if [ ! -x "$PY" ]; then
+  PY="$(command -v python3)"
 fi
 
-echo "==> 3/3 Watcher"
-echo "     Adicione ao crontab (a cada 5 min):"
-echo "     */5 * * * * set -a && . $REPO_DIR/vps/.env && set +a && cd $REPO_DIR && $PY vps/quant_watcher.py >> /var/log/quant_watcher.log 2>&1"
+DATA_ROOT="${DATA_ROOT:-/data}"
+if ! mkdir -p "$DATA_ROOT" 2>/dev/null; then
+  DATA_ROOT="$REPO_DIR/data"
+  mkdir -p "$DATA_ROOT"
+fi
+# Sobrescreve .env se /data não existir neste host
+export QUANT_STATE_PATH="$DATA_ROOT/quant_state.json"
+export QUANT_BOT_OFFSET="$DATA_ROOT/quant_bot_offset.txt"
+export QUANT_KRONOS_MODE="${QUANT_KRONOS_MODE:-warn}"
+
+echo "==> 1/4 Teste QUANT"
+"$PY" vps/quant_test.py || true
+
+echo "==> 2/4 Bot on-demand"
+_tok="${TELEGRAM_BOT_TOKEN:-}"
+_chat="${TELEGRAM_CHAT_ID:-}"
+if [ -z "$_tok" ] || [ -z "$_chat" ] || [[ "$_tok" == *your_* ]] || [[ "$_chat" == *your_* ]]; then
+  echo "     SKIP bot — configure TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID em vps/.env"
+else
+  if pgrep -f "vps/quant_bot.py" >/dev/null 2>&1; then
+    echo "     quant_bot já rodando (pid $(pgrep -f 'vps/quant_bot.py' | head -1))"
+  else
+    nohup "$PY" vps/quant_bot.py >> "$DATA_ROOT/quant_bot.log" 2>&1 &
+    echo "     quant_bot pid $! — $DATA_ROOT/quant_bot.log"
+  fi
+fi
+
+echo "==> 3/4 Cron watcher"
+REPO_DIR="$REPO_DIR" PY="$PY" bash vps/install_quant_crontab.sh || echo "     SKIP cron (sem crontab?)"
+
+echo "==> 4/4 Uma varredura de notícias agora"
+"$PY" vps/quant_watcher.py || true
+
 echo ""
-echo "Telegram: /help /quant /pesquisa bitcoin funding"
-echo "Modo Kronos: QUANT_KRONOS_MODE=warn (teste) ou veto (produção)"
+echo "QUANT ativo. Telegram: /ping /quant /pesquisa <texto>"
+echo "Modo Kronos: $QUANT_KRONOS_MODE"

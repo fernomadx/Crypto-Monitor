@@ -35,8 +35,12 @@ echo "==> Teste manual"
 echo "  set -a && source $REPO_DIR/vps/.env && set +a"
 echo "  cd $REPO_DIR && $REPO_DIR/vps/.venv/bin/python vps/kronos_signal.py"
 
-echo "==> QUANT (opcional): edite vps/.env com LLMQUANT_API_KEY + TELEGRAM_*"
-echo "    Bot: nohup $REPO_DIR/vps/.venv/bin/python $REPO_DIR/vps/quant_bot.py >> /data/quant_bot.log 2>&1 &"
-echo "    Ver vps/QUANT.md"
+echo "==> QUANT (automático)"
+REPO_DIR="$REPO_DIR" bash "$REPO_DIR/vps/start_quant.sh" || true
 
-echo "==> Pronto. Adicione vps/crontab.example ao crontab do usuário."
+echo "==> Crontab Kronos (se ainda não tiver)"
+if ! crontab -l 2>/dev/null | grep -q kronos_signal; then
+  ( crontab -l 2>/dev/null || true; cat "$REPO_DIR/vps/crontab.example" ) | crontab - 2>/dev/null || true
+fi
+
+echo "==> Pronto. Ver vps/QUANT.md"

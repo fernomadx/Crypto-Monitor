@@ -109,9 +109,10 @@ def scan_new_impacts(max_age_minutes: int | None = None) -> list[dict]:
                 url=url,
             )
 
-    if alerts:
-        quant_state.save(state)
-    elif articles:
-        quant_state.save(state)
+    if articles or alerts:
+        try:
+            quant_state.save(state)
+        except OSError as exc:
+            logger.warning("Não gravou quant_state: %s", exc)
 
     return alerts

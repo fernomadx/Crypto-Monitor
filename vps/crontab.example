@@ -16,5 +16,5 @@ PATH=/usr/local/bin:/usr/bin:/bin
 # QUANT: notícias de impacto → [QUANT] (estado em /data/quant_state.json)
 */5 * * * * set -a && . /opt/crypto-monitor/vps/.env && set +a && cd /opt/crypto-monitor && /opt/crypto-monitor/vps/.venv/bin/python vps/quant_watcher.py >> /var/log/quant_watcher.log 2>&1
 
-# QUANT bot on-demand: rode uma vez no boot (não no cron):
-# nohup ... python vps/quant_bot.py >> /data/quant_bot.log 2>&1 &
+# QUANT bot: vps/start_quant.sh sobe no boot (não precisa cron)
+# QUANT watcher: vps/install_quant_crontab.sh (ou start_quant.sh)
