@@ -14,6 +14,11 @@ logger = logging.getLogger(__name__)
 IMPACT_THRESHOLD = float(os.environ.get("QUANT_IMPACT_THRESHOLD", "0.65"))
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
+
+def _impact_alerts_enabled() -> bool:
+    """QUANT_IMPACT_ALERTS=0 — só atualiza estado; alertas vão no digest 1H."""
+    return os.environ.get("QUANT_IMPACT_ALERTS", "true").lower() not in ("0", "false", "no", "off")
+
 TICKER_PATTERNS = {
     "BTC": re.compile(r"\b(btc|bitcoin)\b", re.I),
     "ETH": re.compile(r"\b(eth|ethereum)\b", re.I),

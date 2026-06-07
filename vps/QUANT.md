@@ -5,7 +5,8 @@ Três peças **separadas** do `[KRONOS]`:
 | Peça | Script | Função |
 |------|--------|--------|
 | **On-demand** | `vps/quant_bot.py` | Você pergunta quando quiser (`/pesquisa`, `/quant`) |
-| **Alertas** | `vps/quant_watcher.py` | Notícia de impacto → Telegram `[QUANT]` |
+| **Notícias 1H** | `vps/quant_hourly_news.py` | Digest no fechamento candle 1H → `[QUANT]` |
+| **Alertas** | `vps/quant_watcher.py` | Alto impacto imediato (opcional, `QUANT_IMPACT_ALERTS`) |
 | **Kronos** | `lib/kronos_quant.py` | Lê estado e pode **vetar** scorecard 4H se contexto contradiz |
 
 ## Setup Railway (mesmo container do Kronos)
@@ -54,11 +55,21 @@ set -a && source vps/.env && set +a
 nohup vps/.venv/bin/python vps/quant_bot.py >> /data/quant_bot.log 2>&1 &
 ```
 
-### 2. Watcher de notícias (cron a cada 5 min)
+### 2. Notícias a cada 1H (fechamento candle)
 
-Ver `vps/crontab.example` — linha `quant_watcher.py`.
+Cron `1 * * * *` → `quant_hourly_news.py` (resumo Haiku + manchetes + preços LLMQuant).
 
-### 3. Kronos na mesma VPS
+Desative alertas imediatos e use só o digest:
+
+```env
+QUANT_IMPACT_ALERTS=false
+```
+
+### 3. Watcher de alto impacto (opcional, cron 5 min)
+
+Ver `crontab` — `quant_watcher.py` (só se `QUANT_IMPACT_ALERTS=true`).
+
+### 4. Kronos na mesma VPS
 
 O `kronos_signal.py` já inclui bloco **Contexto QUANT** e veto no scorecard 4H
 (`QUANT_KRONOS_VETO=1`).
