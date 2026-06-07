@@ -13,6 +13,7 @@ Rodar no Hetzner: nohup python vps/quant_bot.py >> /data/quant_bot.log 2>&1 &
 
 from __future__ import annotations
 
+import fcntl
 import logging
 import os
 import sys
@@ -32,7 +33,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger(__name__)
 
 OFFSET_PATH = Path(os.environ.get("QUANT_BOT_OFFSET", "/data/quant_bot_offset.txt"))
+SINGLETON_LOCK = Path(os.environ.get("QUANT_BOT_LOCK", "/data/quant_bot.lock"))
 POLL_SEC = int(os.environ.get("QUANT_BOT_POLL_SEC", "2"))
+_singleton_fp = None
 
 
 def _bot_token() -> str:
@@ -53,6 +56,23 @@ def _api(method: str, **kwargs) -> dict:
         )
     resp.raise_for_status()
     return resp.json()
+
+
+def _acquire_singleton() -> bool:
+    """Uma única instância por container (evita /ping duplicado)."""
+    global _singleton_fp
+    SINGLETON_LOCK.parent.mkdir(parents=True, exist_ok=True)
+    fp = open(SINGLETON_LOCK, "w")
+    try:
+        fcntl.flock(fp.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        fp.close()
+        logger.warning("QUANT bot já rodando — saindo")
+        return False
+    fp.write(str(os.getpid()))
+    fp.flush()
+    _singleton_fp = fp
+    return True
 
 
 def _ensure_polling() -> None:
@@ -127,8 +147,19 @@ def _dispatch(text: str) -> str:
     if cmd in ("/start", "/help"):
         return _help_text()
     if cmd in ("/ping", "/pin"):
+        from lib.quant_impact import impact_alerts_enabled
+
         api = "✅ LLMQuant" if llmquant_client.configured() else "⚠️ sem LLMQUANT_API_KEY"
-        return f"<b>QUANT online</b>\n{api}\nModo Kronos: <code>{os.environ.get('QUANT_KRONOS_MODE', 'warn')}</code>"
+        thresh = os.environ.get("QUANT_IMPACT_THRESHOLD", "0.70")
+        alerts = (
+            f"⚡ Alertas fortes: <b>ON</b> (≥{thresh})"
+            if impact_alerts_enabled()
+            else "Alertas fortes: off (só digest 1H)"
+        )
+        return (
+            f"<b>QUANT online</b>\n{api}\n{alerts}\n"
+            f"Modo Kronos: <code>{os.environ.get('QUANT_KRONOS_MODE', 'warn')}</code>"
+        )
     if cmd in ("/quant", "/contexto"):
         return _handle_context()
     if cmd in ("/pesquisa", "/research", "/p"):
@@ -147,6 +178,9 @@ def _dispatch(text: str) -> str:
 def run() -> None:
     if not _bot_token() or not _allowed_chat():
         raise RuntimeError("TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID obrigatórios")
+
+    if not _acquire_singleton():
+        return
 
     logger.info("QUANT bot ativo (chat %s)", _allowed_chat())
     _ensure_polling()
