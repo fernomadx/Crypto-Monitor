@@ -1,0 +1,50 @@
+# Configura variáveis QUANT no Railway + redeploy (requer secrets no GitHub).
+#
+# GitHub → Settings → Secrets → Actions:
+#   RAILWAY_TOKEN      — Project Token (Railway → Project → Settings → Tokens)
+#   LLMQUANT_API_KEY   — chave de llmquantdata.com
+
+name: Railway QUANT Config
+
+on:
+  workflow_dispatch:
+
+jobs:
+  configure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Set QUANT variables on Railway
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          LLMQUANT_API_KEY: ${{ secrets.LLMQUANT_API_KEY }}
+        run: |
+          if [ -z "$RAILWAY_TOKEN" ]; then
+            echo "::error::Adicione RAILWAY_TOKEN em GitHub Secrets"
+            exit 1
+          fi
+          if [ -z "$LLMQUANT_API_KEY" ]; then
+            echo "::error::Adicione LLMQUANT_API_KEY em GitHub Secrets"
+            exit 1
+          fi
+          railway variable set \
+            "LLMQUANT_API_KEY=$LLMQUANT_API_KEY" \
+            QUANT_KRONOS_MODE=warn \
+            QUANT_STATE_PATH=/data/quant_state.json \
+            QUANT_IMPACT_THRESHOLD=0.65 \
+            QUANT_MAX_AGE_HOURS=4
+          echo "::notice::Variáveis QUANT configuradas"
+
+      - name: Redeploy
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway redeploy --yes
