@@ -98,6 +98,17 @@ def _save_offset(offset: int) -> None:
     OFFSET_PATH.write_text(str(offset))
 
 
+def _llmquant_status_line(*, verify: bool = False) -> str:
+    if not llmquant_client.configured():
+        return "⚠️ LLMQuant: configure <code>LLMQUANT_API_KEY</code> para pesquisa completa."
+    if not verify:
+        return "✅ LLMQuant configurado — <code>/pesquisa</code> e preços ativos."
+    ok, detail = llmquant_client.health_check()
+    if ok:
+        return f"✅ LLMQuant — {detail}"
+    return f"⚠️ LLMQuant: {detail}"
+
+
 def _help_text() -> str:
     return (
         "<b>🧠 QUANT — comandos</b>\n\n"
@@ -106,8 +117,8 @@ def _help_text() -> str:
         "/btc · /eth · /sol — preço + contexto\n"
         "/ping — teste de conexão (também aceita /pin)\n"
         "/help — esta ajuda\n\n"
-        "<i>Canal [QUANT] separado do [KRONOS]. "
-        "Configure LLMQUANT_API_KEY para pesquisa completa.</i>"
+        f"<i>Canal [QUANT] separado do [KRONOS].</i>\n"
+        f"<i>{_llmquant_status_line()}</i>"
     )
 
 
@@ -149,7 +160,7 @@ def _dispatch(text: str) -> str:
     if cmd in ("/ping", "/pin"):
         from lib.quant_impact import impact_alerts_enabled
 
-        api = "✅ LLMQuant" if llmquant_client.configured() else "⚠️ sem LLMQUANT_API_KEY"
+        api = _llmquant_status_line(verify=True)
         thresh = os.environ.get("QUANT_IMPACT_THRESHOLD", "0.70")
         alerts = (
             f"⚡ Alertas fortes: <b>ON</b> (≥{thresh})"
@@ -169,7 +180,7 @@ def _dispatch(text: str) -> str:
         state = quant_state.load()
         quant_state.set_last_research(state, rest, answer)
         quant_state.save(state)
-        return f"<b>Pesquisa:</b> {rest}\n\n{answer}"
+        return quant_research.format_for_telegram(rest, answer)
     if cmd in ("/btc", "/eth", "/sol"):
         return _handle_snapshot(cmd[1:].upper())
     return _help_text()

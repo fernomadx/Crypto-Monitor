@@ -144,24 +144,45 @@ def send_quant_alert(title: str, body: str) -> bool:
     return send(text)
 
 
+def _chunk_text(text: str, limit: int = 4000) -> list[str]:
+    if len(text) <= limit:
+        return [text]
+    chunks: list[str] = []
+    rest = text
+    while rest:
+        if len(rest) <= limit:
+            chunks.append(rest)
+            break
+        cut = rest.rfind("\n\n", 0, limit)
+        if cut < limit // 2:
+            cut = rest.rfind("\n", 0, limit)
+        if cut < limit // 2:
+            cut = limit
+        chunks.append(rest[:cut].rstrip())
+        rest = rest[cut:].lstrip()
+    return chunks
+
+
 def send_quant_reply(chat_id: str, body: str) -> bool:
     """Resposta do bot QUANT (on-demand) para um chat."""
     try:
         _, _, base_url = _telegram_config()
-        resp = requests.post(
-            f"{base_url}/sendMessage",
-            json={
-                "chat_id": chat_id,
-                "text": body[:4000],
-                "parse_mode": "HTML",
-                "disable_web_page_preview": True,
-            },
-            timeout=15,
-        )
-        if not resp.ok:
-            logger.error("Quant reply error %s: %s", resp.status_code, resp.text[:200])
-            return False
-        return True
+        ok = True
+        for chunk in _chunk_text(body[:12000]):
+            resp = requests.post(
+                f"{base_url}/sendMessage",
+                json={
+                    "chat_id": chat_id,
+                    "text": chunk,
+                    "parse_mode": "HTML",
+                    "disable_web_page_preview": True,
+                },
+                timeout=15,
+            )
+            if not resp.ok:
+                logger.error("Quant reply error %s: %s", resp.status_code, resp.text[:200])
+                ok = False
+        return ok
     except Exception as exc:
         logger.error("Quant reply failed: %s", exc)
         return False
