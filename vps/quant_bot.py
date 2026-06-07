@@ -180,7 +180,7 @@ def _dispatch(text: str) -> str:
         state = quant_state.load()
         quant_state.set_last_research(state, rest, answer)
         quant_state.save(state)
-        return f"<b>Pesquisa:</b> {rest}\n\n{answer}"
+        return quant_research.format_for_telegram(rest, answer)
     if cmd in ("/btc", "/eth", "/sol"):
         return _handle_snapshot(cmd[1:].upper())
     return _help_text()

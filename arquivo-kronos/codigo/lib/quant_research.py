@@ -2,33 +2,56 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import os
+import re
 
 from lib import llmquant_client
 
 logger = logging.getLogger(__name__)
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+_CJK_RE = re.compile(r"[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]")
+
+
+def _wiki_usable(title: str, summary: str) -> bool:
+    """Evita corpo wiki em idiomas não latinos — summary basta."""
+    blob = f"{title} {summary}"
+    if not blob.strip():
+        return False
+    cjk = len(_CJK_RE.findall(blob))
+    return cjk < max(len(blob) * 0.25, 8)
 
 
 def _haiku_synthesize(query: str, context_blocks: list[str]) -> str:
     if not ANTHROPIC_API_KEY:
-        return "\n\n".join(context_blocks)[:3500]
+        return "\n\n".join(context_blocks)[:2800]
 
     import anthropic
 
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-    ctx = "\n\n---\n\n".join(context_blocks)[:12000]
-    prompt = f"""Você é analista quant crypto. O usuário perguntou:
+    ctx = "\n\n---\n\n".join(context_blocks)[:10000]
+    prompt = f"""Você é analista quant crypto no Telegram. Pergunta do utilizador:
 "{query}"
 
-Use APENAS o contexto abaixo (Quant Wiki, papers, mercado). Responda em português, objetivo:
-• 3–6 bullets com insights acionáveis
-• cite fontes entre colchetes [Wiki: título] ou [Paper: título]
-• se faltar dado, diga o que falta
-• não invente números que não estão no contexto
+Use APENAS o contexto (Quant Wiki, papers, preços). Responda em português, curto para telemóvel (~900 caracteres máx.).
+
+Formato (HTML simples — use <b> nos títulos das secções):
+
+📊 <b>Mercado agora</b>
+• BTC, ETH, SOL: preço e variação 24h (só números do contexto)
+
+💡 <b>Leitura para trade</b>
+• 2–3 bullets objetivos (momentum, risco, correlação) — linguagem de trader, não tese académica
+
+📚 <b>Fontes</b>
+• 2–4 linhas curtas: [Paper: título] ou [Wiki: título em PT se possível]
+
+Regras:
+- Não invente números
+- Não faça secção longa "o que falta" — no máximo 1 frase no fim se for crítico
+- Títulos de papers/wiki em inglês/chinês: cite o original, traduza brevemente entre parênteses se útil
+- Isto é contexto, não ordem de trade
 
 CONTEXTO:
 {ctx}
@@ -36,13 +59,13 @@ CONTEXTO:
     try:
         msg = client.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=900,
+            max_tokens=550,
             messages=[{"role": "user", "content": prompt}],
         )
         return msg.content[0].text.strip()
     except Exception as exc:
         logger.error("Haiku research falhou: %s", exc)
-        return "\n\n".join(context_blocks)[:3500]
+        return "\n\n".join(context_blocks)[:2800]
 
 
 def gather_context(query: str) -> tuple[list[str], list[str]]:
@@ -60,10 +83,10 @@ def gather_context(query: str) -> tuple[list[str], list[str]]:
             summary = hit.get("summary", "")
             wid = hit.get("wikiItemId")
             extra = ""
-            if wid:
-                full = llmquant_client.wiki_read(wid, max_length=1200)
+            if wid and _wiki_usable(title, summary):
+                full = llmquant_client.wiki_read(wid, max_length=900)
                 if full:
-                    extra = (full.get("body_markdown") or "")[:1200]
+                    extra = (full.get("body_markdown") or "")[:900]
             blocks.append(f"[Wiki: {title}]\n{summary}\n{extra}".strip())
     except Exception as exc:
         logger.warning("wiki_search: %s", exc)
@@ -114,4 +137,15 @@ def research(query: str) -> str:
     answer = _haiku_synthesize(query, blocks)
     if notes:
         answer += "\n\n<i>" + " · ".join(notes) + "</i>"
-    return answer
+    return answer[:3200]
+
+
+def format_for_telegram(query: str, answer: str) -> str:
+    """Cabeçalho consistente com o canal [QUANT]."""
+    q = query.strip()[:120]
+    body = answer.strip()
+    return (
+        f"🔎 <b>Pesquisa:</b> {q}\n\n"
+        f"{body}\n\n"
+        "<i>Contexto LLMQuant — não é ordem de trade. Cruze com [KRONOS] e funding.</i>"
+    )
