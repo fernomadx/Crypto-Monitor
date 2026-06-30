@@ -7,6 +7,7 @@ Comandos (só responde TELEGRAM_CHAT_ID autorizado):
   /pesquisa <pergunta>  — consulta LLMQuant + Haiku
   /btc /eth /sol        — snapshot mercado + contexto
   /scorecard            — acerto Kronos (simulação 4H)
+  /vps [IP|test]        — configura/testa Hetzner BTCCURSOR
   /help
 
 Rodar no Hetzner: nohup python vps/quant_bot.py >> /data/quant_bot.log 2>&1 &
@@ -119,6 +120,7 @@ def _help_text() -> str:
         "/ping — teste de conexão (também aceita /pin)\n"
         "/scorecard — acerto das entradas Kronos (7d/30d, simulação 4H)\n"
         "/scorecard diario — ranking por timeframe + resumo\n"
+        "/vps — status Hetzner · <code>/vps IP</code> configura · <code>/vps test</code> sync\n"
         "/help — esta ajuda\n\n"
         f"<i>Canal [QUANT] separado do [KRONOS].</i>\n"
         f"<i>{_llmquant_status_line()}</i>"
@@ -160,6 +162,23 @@ def _handle_scorecard(args: str) -> str:
     except Exception as exc:
         logger.exception("scorecard format: %s", exc)
         return f"⚠️ Erro ao montar scorecard: {exc}{warn}"
+
+
+def _handle_vps(args: str) -> str:
+    from lib import vps_config
+    from vps.hetzner_remote import sync_and_test
+
+    sub = args.strip().lower()
+    if sub in ("", "status", "info"):
+        return vps_config.status_text()
+    if sub in ("test", "sync", "check"):
+        return sync_and_test()
+    ip = args.strip().split()[0]
+    try:
+        vps_config.set_host(ip)
+    except ValueError as exc:
+        return f"⚠️ {exc}\nUso: <code>/vps 95.xxx.xxx.xxx</code> ou <code>/vps test</code>"
+    return sync_and_test(ip)
 
 
 def _handle_snapshot(symbol: str) -> str:
@@ -221,6 +240,8 @@ def _dispatch(text: str) -> str:
         return _handle_snapshot(cmd[1:].upper())
     if cmd in ("/scorecard", "/score", "/acerto"):
         return _handle_scorecard(rest)
+    if cmd in ("/vps", "/hetzner", "/btccursor"):
+        return _handle_vps(rest)
     return _help_text()
 
 
@@ -254,6 +275,12 @@ def run() -> None:
                         chat_id,
                         "⏳ Calculando scorecard Kronos (consulta MEXC + catálogo)…",
                     )
+                elif cmd in ("/vps", "/hetzner", "/btccursor"):
+                    rest_vps = rest.strip()
+                    if rest_vps.lower() in ("test", "sync", "check") or (
+                        rest_vps and rest_vps.split()[0][0].isdigit()
+                    ):
+                        send_quant_reply(chat_id, "⏳ Conectando na Hetzner e rodando teste…")
                 reply = _dispatch(text)
                 if not send_quant_reply(chat_id, reply):
                     send_quant_reply(
