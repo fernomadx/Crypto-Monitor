@@ -12,8 +12,8 @@ python - <<'PY' || true
 import os, sys
 sys.path.insert(0, "/app")
 try:
-    from lib.kronos_config import apply_v31_defaults, format_boot_message
-    apply_v31_defaults()
+    from lib.kronos_config import apply_kronos_defaults, format_boot_message
+    apply_kronos_defaults()
     from lib.telegram import send_kronos_alert
     send_kronos_alert("Serviço iniciado", format_boot_message())
 except Exception as e:
@@ -28,7 +28,7 @@ python - <<'PY' || true
 import os, sys
 sys.path.insert(0, "/app")
 os.environ.setdefault("QUANT_STATE_PATH", "/data/quant_state.json")
-os.environ.setdefault("QUANT_KRONOS_MODE", "warn")
+os.environ.setdefault("QUANT_KRONOS_MODE", "veto")
 try:
     from lib.telegram import send_quant_alert
     from lib.quant_impact import impact_alerts_enabled

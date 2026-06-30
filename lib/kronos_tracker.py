@@ -824,7 +824,8 @@ def format_scorecard_telegram(new_trades: list[dict] | None = None) -> str:
         "<b>📊 Scorecard Kronos — simulação</b>",
         f"Capital <b>${INITIAL_CAPITAL_USDC:.0f}</b> · "
         f"margem <b>${MARGIN_USDC:.0f}</b> · <b>{LEVERAGE:.0f}x</b> "
-        f"(nocional ${notional_usdc():.0f}/trade) · só <b>{os.environ.get('KRONOS_SCORE_INTERVAL', '4h').upper()}</b> alinhado",
+        f"(nocional ${notional_usdc():.0f}/trade) · só <b>{os.environ.get('KRONOS_SCORE_INTERVAL', '4h').upper()}</b> · "
+        f"<b>{os.environ.get('KRONOS_SCORE_TICKERS', 'BTC')}</b>",
         f"Taxas MEXC sobre nocional: maker {FEE_MAKER_PCT}% · taker {FEE_TAKER_PCT}%",
         "",
     ]

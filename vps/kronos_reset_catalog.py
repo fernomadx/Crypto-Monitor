@@ -59,7 +59,7 @@ def main() -> None:
         conn.execute("DELETE FROM sqlite_sequence WHERE name='kronos_predictions'")
 
     print(f"\n✅ Catálogo Kronos apagado ({total} registros).")
-    print("Próximas previsões 4H operáveis começam scorecard limpo (10x, filtros novos).")
+    print("Próximas previsões 4H operáveis começam scorecard limpo (v4.0: 3x, BTC, filtros novos).")
     print("Tabelas funding/notícias/portfolio não foram alteradas.")
 
 
