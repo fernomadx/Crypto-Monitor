@@ -39,6 +39,7 @@ try:
         "Online",
         "Bot QUANT ativo no Railway.\n"
         "Comandos: <code>/ping</code> <code>/quant</code> "
+        "<code>/scorecard</code> "
         "<code>/pesquisa sua pergunta</code>\n"
         + (
             f"⚡ Alertas imediatos: <b>ON</b> (notícia forte ≥ {thresh})\n"

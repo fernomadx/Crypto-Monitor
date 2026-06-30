@@ -6,6 +6,7 @@ Comandos (só responde TELEGRAM_CHAT_ID autorizado):
   /quant, /contexto     — estado atual (notícias de impacto)
   /pesquisa <pergunta>  — consulta LLMQuant + Haiku
   /btc /eth /sol        — snapshot mercado + contexto
+  /scorecard            — acerto Kronos (simulação 4H)
   /help
 
 Rodar no Hetzner: nohup python vps/quant_bot.py >> /data/quant_bot.log 2>&1 &
@@ -116,6 +117,8 @@ def _help_text() -> str:
         "/pesquisa &lt;pergunta&gt; — pesquisa Quant Wiki + papers\n"
         "/btc · /eth · /sol — preço + contexto\n"
         "/ping — teste de conexão (também aceita /pin)\n"
+        "/scorecard — acerto das entradas Kronos (7d/30d, simulação 4H)\n"
+        "/scorecard diario — ranking por timeframe + resumo\n"
         "/help — esta ajuda\n\n"
         f"<i>Canal [QUANT] separado do [KRONOS].</i>\n"
         f"<i>{_llmquant_status_line()}</i>"
@@ -124,6 +127,31 @@ def _help_text() -> str:
 
 def _handle_context() -> str:
     return format_kronos_footer()
+
+
+def _handle_scorecard(args: str) -> str:
+    from lib.kronos_config import apply_v31_defaults
+    from lib.kronos_tracker import (
+        format_daily_report_telegram,
+        format_scorecard_telegram,
+        init_kronos_tables,
+        score_mature_predictions,
+    )
+
+    apply_v31_defaults()
+    init_kronos_tables()
+    try:
+        new_trades = score_mature_predictions()
+    except Exception as exc:
+        logger.exception("scorecard: %s", exc)
+        return f"⚠️ Erro ao avaliar trades Kronos: {exc}"
+
+    sub = args.strip().lower()
+    if sub in ("diario", "daily", "ranking", "relatorio", "relatório"):
+        return format_daily_report_telegram()
+
+    short_closed = [t for t in new_trades if t.get("horizon") == "short"]
+    return format_scorecard_telegram(new_trades=short_closed if short_closed else None)
 
 
 def _handle_snapshot(symbol: str) -> str:
@@ -183,6 +211,8 @@ def _dispatch(text: str) -> str:
         return quant_research.format_for_telegram(rest, answer)
     if cmd in ("/btc", "/eth", "/sol"):
         return _handle_snapshot(cmd[1:].upper())
+    if cmd in ("/scorecard", "/score", "/acerto"):
+        return _handle_scorecard(rest)
     return _help_text()
 
 
