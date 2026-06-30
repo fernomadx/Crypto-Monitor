@@ -25,7 +25,11 @@ jobs:
             export KRONOS_DIR=/opt/Kronos
             git clone https://github.com/fernomadx/Crypto-Monitor.git "$REPO_DIR" 2>/dev/null || true
             cd "$REPO_DIR" && git pull origin main
-            sudo bash vps/install.sh
+            if [ -x "$REPO_DIR/vps/.venv/bin/pip" ]; then
+              "$REPO_DIR/vps/.venv/bin/pip" install -r vps/requirements-railway.txt -q
+            fi
+            chmod +x vps/hetzner_test.sh
+            bash vps/hetzner_test.sh --score
 
       - name: VPS secrets missing
         env:
