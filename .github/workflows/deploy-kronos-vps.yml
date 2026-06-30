@@ -2,6 +2,11 @@ name: Deploy Kronos to VPS
 
 on:
   workflow_dispatch:
+    inputs:
+      vps_host:
+        description: "IPv4 Hetzner (opcional se secret VPS_HOST existir)"
+        required: false
+        type: string
 
 jobs:
   deploy:
@@ -12,13 +17,15 @@ jobs:
       - name: Deploy via SSH
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
-        if: env.VPS_HOST != ''
+          INPUT_HOST: ${{ github.event.inputs.vps_host }}
+        if: env.VPS_HOST != '' || env.INPUT_HOST != ''
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.VPS_HOST }}
+          host: ${{ github.event.inputs.vps_host || secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER || 'root' }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT || 22 }}
+          script_stop: true
           script: |
             set -e
             export REPO_DIR=/opt/crypto-monitor
@@ -28,12 +35,16 @@ jobs:
             if [ -x "$REPO_DIR/vps/.venv/bin/pip" ]; then
               "$REPO_DIR/vps/.venv/bin/pip" install -r vps/requirements-railway.txt -q
             fi
-            chmod +x vps/hetzner_test.sh
+            chmod +x vps/hetzner_test.sh scripts/hetzner-bootstrap-test.sh
             bash vps/hetzner_test.sh --score
 
       - name: VPS secrets missing
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
-        if: env.VPS_HOST == ''
+          INPUT_HOST: ${{ github.event.inputs.vps_host }}
+        if: env.VPS_HOST == '' && env.INPUT_HOST == ''
         run: |
-          echo "VPS_HOST não configurado. Kronos já roda no crypto-monitor (Railway) após redeploy."
+          echo "::error::Configure VPS_HOST secret ou informe vps_host no Run workflow."
+          echo "Guia: scripts/setup-vps-github-secrets.md"
+          echo "Teste manual: curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/scripts/hetzner-bootstrap-test.sh | sudo bash"
+          exit 1
