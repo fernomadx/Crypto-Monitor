@@ -163,22 +163,43 @@ def _chunk_text(text: str, limit: int = 4000) -> list[str]:
     return chunks
 
 
-def send_quant_reply(chat_id: str, body: str) -> bool:
+def _strip_html(text: str) -> str:
+    import re
+
+    plain = re.sub(r"</?([bi]|code|i)>", "", text)
+    return plain.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
+
+
+def send_quant_reply(chat_id: str, body: str, *, parse_mode: str | None = "HTML") -> bool:
     """Resposta do bot QUANT (on-demand) para um chat."""
     try:
         _, _, base_url = _telegram_config()
         ok = True
         for chunk in _chunk_text(body[:12000]):
+            payload: dict = {
+                "chat_id": chat_id,
+                "text": chunk,
+                "disable_web_page_preview": True,
+            }
+            if parse_mode:
+                payload["parse_mode"] = parse_mode
             resp = requests.post(
                 f"{base_url}/sendMessage",
-                json={
-                    "chat_id": chat_id,
-                    "text": chunk,
-                    "parse_mode": "HTML",
-                    "disable_web_page_preview": True,
-                },
-                timeout=15,
+                json=payload,
+                timeout=30,
             )
+            if not resp.ok and parse_mode == "HTML":
+                logger.warning("Quant reply HTML failed %s — retry plain", resp.status_code)
+                plain = _strip_html(chunk)
+                resp = requests.post(
+                    f"{base_url}/sendMessage",
+                    json={
+                        "chat_id": chat_id,
+                        "text": plain,
+                        "disable_web_page_preview": True,
+                    },
+                    timeout=30,
+                )
             if not resp.ok:
                 logger.error("Quant reply error %s: %s", resp.status_code, resp.text[:200])
                 ok = False

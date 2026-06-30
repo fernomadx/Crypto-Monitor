@@ -140,18 +140,26 @@ def _handle_scorecard(args: str) -> str:
 
     apply_v31_defaults()
     init_kronos_tables()
+
+    warn = ""
+    new_trades: list = []
     try:
         new_trades = score_mature_predictions()
     except Exception as exc:
         logger.exception("scorecard: %s", exc)
-        return f"⚠️ Erro ao avaliar trades Kronos: {exc}"
+        warn = f"\n\n⚠️ Não foi possível fechar trades pendentes agora: {exc}\n<i>Mostrando catálogo já gravado.</i>"
 
     sub = args.strip().lower()
-    if sub in ("diario", "daily", "ranking", "relatorio", "relatório"):
-        return format_daily_report_telegram()
-
-    short_closed = [t for t in new_trades if t.get("horizon") == "short"]
-    return format_scorecard_telegram(new_trades=short_closed if short_closed else None)
+    try:
+        if sub in ("diario", "daily", "ranking", "relatorio", "relatório"):
+            body = format_daily_report_telegram()
+        else:
+            short_closed = [t for t in new_trades if t.get("horizon") == "short"]
+            body = format_scorecard_telegram(new_trades=short_closed if short_closed else None)
+        return body + warn
+    except Exception as exc:
+        logger.exception("scorecard format: %s", exc)
+        return f"⚠️ Erro ao montar scorecard: {exc}{warn}"
 
 
 def _handle_snapshot(symbol: str) -> str:
@@ -240,8 +248,19 @@ def run() -> None:
                     continue
 
                 logger.info("Comando: %s", text[:80])
+                cmd = text.strip().split()[0].split("@")[0].lower()
+                if cmd in ("/scorecard", "/score", "/acerto"):
+                    send_quant_reply(
+                        chat_id,
+                        "⏳ Calculando scorecard Kronos (consulta MEXC + catálogo)…",
+                    )
                 reply = _dispatch(text)
-                send_quant_reply(chat_id, reply)
+                if not send_quant_reply(chat_id, reply):
+                    send_quant_reply(
+                        chat_id,
+                        "⚠️ Falha ao enviar resposta. Tente /scorecard de novo em alguns segundos.",
+                        parse_mode=None,
+                    )
 
             _save_offset(offset)
         except Exception as exc:
