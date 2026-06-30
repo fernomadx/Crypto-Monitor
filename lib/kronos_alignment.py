@@ -129,6 +129,10 @@ def should_log_to_scorecard(interval: str, tradeable: bool, result: dict | None 
         return False
     if not result.get("has_levels", True):
         return False
+    from lib.kronos_config import ticker_in_scorecard
+
+    if not ticker_in_scorecard(result.get("ticker", "")):
+        return False
     return True
 
 

@@ -12,9 +12,17 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-MIN_TARGET_PCT = float(os.environ.get("KRONOS_MIN_TARGET_PCT", "0.5"))
-MIN_RR = float(os.environ.get("KRONOS_MIN_RR", "2.0"))
-MAX_STOP_PCT = float(os.environ.get("KRONOS_MAX_STOP_PCT", "1.5"))
+MIN_TARGET_PCT = float(os.environ.get("KRONOS_MIN_TARGET_PCT", "1.0"))
+MIN_RR = float(os.environ.get("KRONOS_MIN_RR", "2.5"))
+MAX_STOP_PCT = float(os.environ.get("KRONOS_MAX_STOP_PCT", "1.0"))
+MIN_EDGE_PCT = float(os.environ.get("KRONOS_MIN_EDGE_PCT", "0.15"))
+FEE_MAKER_PCT = float(os.environ.get("KRONOS_FEE_MAKER_PCT", "0.02"))
+FEE_TAKER_PCT = float(os.environ.get("KRONOS_FEE_TAKER_PCT", "0.05"))
+
+
+def min_profitable_move_pct() -> float:
+    """Movimento mínimo de preço para cobrir taxas round-trip + edge."""
+    return FEE_MAKER_PCT + FEE_TAKER_PCT + MIN_EDGE_PCT
 
 
 def max_stop_pct_for_interval(interval: str) -> float:
@@ -22,7 +30,7 @@ def max_stop_pct_for_interval(interval: str) -> float:
     env_key = f"KRONOS_MAX_STOP_PCT_{iv.upper()}"
     if os.environ.get(env_key):
         return float(os.environ[env_key])
-    defaults = {"4h": 1.8, "1h": 1.5, "1d": 2.5}
+    defaults = {"4h": 0.9, "1h": 1.0, "1d": 2.0}
     return float(os.environ.get("KRONOS_MAX_STOP_PCT", str(defaults.get(iv, MAX_STOP_PCT))))
 
 
@@ -101,6 +109,9 @@ def compute_trade_levels(
         target_pct = move_pct
 
     rr = (reward / risk) if risk > 0 else 0.0
+    if abs(target_pct) < min_profitable_move_pct():
+        return None
+
     return TradeLevels(
         target=target,
         stop=stop,
