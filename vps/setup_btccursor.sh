@@ -38,9 +38,7 @@ echo "  cd $REPO_DIR && $REPO_DIR/vps/.venv/bin/python vps/kronos_signal.py"
 echo "==> QUANT (automático)"
 REPO_DIR="$REPO_DIR" bash "$REPO_DIR/vps/start_quant.sh" || true
 
-echo "==> Crontab Kronos (se ainda não tiver)"
-if ! crontab -l 2>/dev/null | grep -q kronos_signal; then
-  ( crontab -l 2>/dev/null || true; cat "$REPO_DIR/vps/crontab.example" ) | crontab - 2>/dev/null || true
-fi
+echo "==> Kronos OFF na VPS (ativo só no Railway)"
+bash "$REPO_DIR/vps/hetzner_disable_kronos.sh" 2>/dev/null || true
 
 echo "==> Pronto. Ver vps/QUANT.md"

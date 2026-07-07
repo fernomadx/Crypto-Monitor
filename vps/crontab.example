@@ -1,4 +1,6 @@
-# Crontab VPS BTCCURSOR — bot KRONOS_TELEGRAM_* (separado do Railway)
+# Crontab VPS BTCCURSOR — Kronos DESLIGADO por padrão (ativo só no Railway).
+# Não cole as linhas kronos_* abaixo sem bot KRONOS_TELEGRAM_* dedicado e KRONOS_VPS_ENABLED=1.
+# Desligar: bash vps/hetzner_disable_kronos.sh
 # crontab -e  e cole:
 
 SHELL=/bin/bash
