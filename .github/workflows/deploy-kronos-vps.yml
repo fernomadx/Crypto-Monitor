@@ -7,6 +7,11 @@ on:
         description: "IPv4 Hetzner (opcional se secret VPS_HOST existir)"
         required: false
         type: string
+  push:
+    branches: [main]
+    paths:
+      - vps/hetzner_disable_kronos.sh
+      - .github/workflows/deploy-kronos-vps.yml
 
 jobs:
   disable:
