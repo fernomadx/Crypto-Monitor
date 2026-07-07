@@ -55,3 +55,28 @@ except Exception as e:
 PY
 
 /app/vps/ensure_quant_bot.sh || true
+
+echo "Hetzner: desligando Kronos duplicado (one-shot)..."
+python - <<'PY' || true
+import os, sys
+sys.path.insert(0, "/app")
+flag = "/data/hetzner_kronos_disabled.flag"
+if os.path.isfile(flag):
+    print("hetzner disable: já executado")
+    raise SystemExit(0)
+host = os.environ.get("VPS_HOST", "204.168.179.200").strip()
+if not os.environ.get("VPS_SSH_PRIVATE_KEY") and not os.path.isfile("/data/vps_ssh_key"):
+    print("hetzner disable: sem VPS_SSH_PRIVATE_KEY — use Console Hetzner ou /vps test")
+    raise SystemExit(0)
+try:
+    from lib import vps_config
+    from vps.hetzner_remote import sync_and_test
+    if not vps_config.get_host():
+        vps_config.set_host(host)
+    msg = sync_and_test(host)
+    print(msg.replace("<b>", "").replace("</b>", "").replace("<code>", "").replace("</code>", ""))
+    if "✅" in msg or "OK" in msg:
+        open(flag, "w").write("ok\n")
+except Exception as exc:
+    print("hetzner disable:", exc)
+PY
