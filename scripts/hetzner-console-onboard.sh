@@ -9,7 +9,7 @@ curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/scrip
   >> ~/.ssh/authorized_keys
 chmod 600 ~/.ssh/authorized_keys
 
-echo "==> Bootstrap Kronos v4.0..."
-curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/scripts/hetzner-bootstrap-test.sh | bash
+echo "==> Desligando Kronos duplicado (ativo só no Railway)..."
+curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/vps/hetzner_disable_kronos.sh | bash
 
 echo "==> Pronto. Railway pode usar: /vps $(curl -s -4 ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}')"

@@ -3,6 +3,7 @@
 # Rode na VPS: bash vps/hetzner_disable_kronos.sh
 # Ou via curl:
 #   curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/vps/hetzner_disable_kronos.sh | sudo bash
+# Trigger: GitHub Actions "Disable Kronos on VPS" (push em main).
 set -euo pipefail
 
 REPO_DIR="${REPO_DIR:-/opt/crypto-monitor}"
