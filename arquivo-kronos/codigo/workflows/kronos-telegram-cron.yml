@@ -1,12 +1,10 @@
-# Roda Kronos + gráficos + Telegram sem VPS (GitHub Actions, a cada 4h).
-# Configure em Settings → Secrets → Actions:
-#   TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+# Roda Kronos + gráficos + Telegram sem VPS (GitHub Actions).
+# DESATIVADO: Kronos roda só no Railway (daemon + crontab).
+# Mantido apenas para teste manual via workflow_dispatch.
 
 name: Kronos Telegram Signal
 
 on:
-  schedule:
-    - cron: "0 */4 * * *"
   workflow_dispatch:
 
 concurrency:

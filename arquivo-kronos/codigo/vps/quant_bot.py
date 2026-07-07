@@ -121,7 +121,7 @@ def _help_text() -> str:
         "/scorecard — acerto das entradas Kronos (7d/30d, simulação 4H)\n"
         "/scorecard diario — ranking por timeframe + resumo\n"
         "/resetscorecard — apaga catálogo e recomeça scorecard v5 limpo\n"
-        "/vps — status Hetzner · <code>/vps IP</code> configura · <code>/vps test</code> sync\n"
+        "/vps — status Hetzner · <code>/vps test</code> desliga Kronos duplicado · <code>/vps IP</code>\n"
         "/help — esta ajuda\n\n"
         f"<i>Canal [QUANT] separado do [KRONOS].</i>\n"
         f"<i>{_llmquant_status_line()}</i>"
@@ -301,7 +301,7 @@ def run() -> None:
                     if rest_vps.lower() in ("test", "sync", "check") or (
                         rest_vps and rest_vps.split()[0][0].isdigit()
                     ):
-                        send_quant_reply(chat_id, "⏳ Conectando na Hetzner e rodando teste…")
+                        send_quant_reply(chat_id, "⏳ Hetzner: desligando Kronos duplicado e verificando…")
                 reply = _dispatch(text)
                 if not send_quant_reply(chat_id, reply):
                     send_quant_reply(
