@@ -594,6 +594,9 @@ def execute_run(
             r["align_note"] = note
 
     apply_to_results(results_by_interval)
+    for interval, results in results_by_interval.items():
+        for r in results:
+            apply_breakout_filter(r)
 
     chart_jobs: list[tuple] = []
 

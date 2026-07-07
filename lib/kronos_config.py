@@ -24,6 +24,9 @@ V50_DEFAULTS: dict[str, str] = {
     "KRONOS_SCORE_TICKERS": "BTC",
     "KRONOS_BREAKOUT_FILTER": "0",
     "KRONOS_DONCHIAN_BARS": "20",
+    "KRONOS_TRAIL_ENABLED": "1",
+    "KRONOS_TRAIL_TRIGGER_PCT": "0.8",
+    "KRONOS_TRAIL_DISTANCE_PCT": "0.4",
     "QUANT_KRONOS_MODE": "veto",
 }
 
@@ -99,10 +102,8 @@ def format_boot_message() -> str:
         f"Scorecard: só <b>{score}</b> · {c['score_tf'].upper()} · 3 TFs alinhados",
         f"Temp {c['temperature']} · viés ±{c['bias_threshold']}% · alvo mín {c['min_target']}%",
         f"R:R {c['min_rr']} · stop 4H {c['stop_4h']}% · entrada pullback {c['entry_offset']}%",
-        f"Simulação: <b>{c['leverage']}x</b> (margem $100 · nocional ${float(c['leverage']) * 100:.0f})",
-        "QUANT modo <b>veto</b> — bloqueia 4H se notícia contradiz.",
-        "Daemon: alerta ~1–3 min após fechar candle (1H · 4H · Diário UTC).",
-        "<b>⚠️ Scorecard antigo (v3.x 10x)?</b> Rode reset para recomeçar limpo:",
+        f"Simulação: <b>{c['leverage']}x</b> · trailing stop ON (+{os.environ.get('KRONOS_TRAIL_TRIGGER_PCT','0.8')}% / {os.environ.get('KRONOS_TRAIL_DISTANCE_PCT','0.4')}%)",
+        "<b>Scorecard v5 limpo?</b> Rode reset se veio de v3/v4:",
         "<code>python3 vps/kronos_reset_catalog.py --confirm</code>",
     ]
     return "\n".join(lines)

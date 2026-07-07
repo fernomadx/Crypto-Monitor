@@ -66,13 +66,17 @@ apply_env() {
   fi
 }
 apply_env KRONOS_LEVERAGE 3
-apply_env KRONOS_MIN_TARGET_PCT 1.0
-apply_env KRONOS_MIN_RR 3.0
-apply_env KRONOS_MAX_STOP_PCT_4H 0.8
-apply_env KRONOS_BIAS_THRESHOLD_PCT 0.40
+apply_env KRONOS_MIN_TARGET_PCT 1.2
+apply_env KRONOS_MIN_RR 3.5
+apply_env KRONOS_MAX_STOP_PCT_4H 0.55
+apply_env KRONOS_BIAS_THRESHOLD_PCT 0.35
+apply_env KRONOS_LIMIT_ENTRY_OFFSET_PCT 0.08
 apply_env KRONOS_SCORE_TICKERS BTC
+apply_env KRONOS_TRAIL_ENABLED 1
+apply_env KRONOS_TRAIL_TRIGGER_PCT 0.8
+apply_env KRONOS_TRAIL_DISTANCE_PCT 0.4
 apply_env QUANT_KRONOS_MODE veto
-echo "==> Regras Kronos v4.0 aplicadas em vps/.env"
+echo "==> Regras Kronos v5.0 aplicadas em vps/.env"
 
 chmod +x "$REPO_DIR/vps/hetzner_test.sh"
 export REPO_DIR
