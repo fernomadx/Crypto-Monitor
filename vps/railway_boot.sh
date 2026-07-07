@@ -13,7 +13,9 @@ import os, sys
 sys.path.insert(0, "/app")
 try:
     from lib.kronos_config import apply_kronos_defaults, format_boot_message
+    from lib.kronos_rules_stamp import ensure_catalog_for_current_rules
     apply_kronos_defaults()
+    ensure_catalog_for_current_rules(notify=True)
     from lib.telegram import send_kronos_alert
     send_kronos_alert("Serviço iniciado", format_boot_message())
 except Exception as e:

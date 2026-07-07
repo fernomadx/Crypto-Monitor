@@ -120,6 +120,7 @@ def _help_text() -> str:
         "/ping — teste de conexão (também aceita /pin)\n"
         "/scorecard — acerto das entradas Kronos (7d/30d, simulação 4H)\n"
         "/scorecard diario — ranking por timeframe + resumo\n"
+        "/resetscorecard — apaga catálogo e recomeça scorecard v5 limpo\n"
         "/vps — status Hetzner · <code>/vps IP</code> configura · <code>/vps test</code> sync\n"
         "/help — esta ajuda\n\n"
         f"<i>Canal [QUANT] separado do [KRONOS].</i>\n"
@@ -162,6 +163,24 @@ def _handle_scorecard(args: str) -> str:
     except Exception as exc:
         logger.exception("scorecard format: %s", exc)
         return f"⚠️ Erro ao montar scorecard: {exc}{warn}"
+
+
+def _handle_reset_scorecard() -> str:
+    from lib.kronos_config import apply_kronos_defaults, active_config, RULES_VERSION
+    from lib.kronos_rules_stamp import ensure_catalog_for_current_rules
+
+    apply_kronos_defaults()
+    os.environ["KRONOS_FORCE_CATALOG_RESET"] = "1"
+    did, deleted = ensure_catalog_for_current_rules(notify=False)
+    c = active_config()
+    if did:
+        return (
+            f"✅ <b>Scorecard resetado</b> — {deleted} registros apagados.\n"
+            f"Regras <b>v{RULES_VERSION}</b> · {c['leverage']}x · alvo≥{c['min_target']}% · "
+            f"stop {c['stop_4h']}% · só {c['score_tickers']}.\n"
+            f"<i>Próximas entradas 4H alinhadas entram no catálogo limpo.</i>"
+        )
+    return f"✅ Catálogo já estava limpo para v{RULES_VERSION}."
 
 
 def _handle_vps(args: str) -> str:
@@ -240,6 +259,8 @@ def _dispatch(text: str) -> str:
         return _handle_snapshot(cmd[1:].upper())
     if cmd in ("/scorecard", "/score", "/acerto"):
         return _handle_scorecard(rest)
+    if cmd in ("/resetscorecard", "/resetcatalogo", "/reset"):
+        return _handle_reset_scorecard()
     if cmd in ("/vps", "/hetzner", "/btccursor"):
         return _handle_vps(rest)
     return _help_text()
