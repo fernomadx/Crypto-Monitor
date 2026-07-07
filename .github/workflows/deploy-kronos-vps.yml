@@ -16,17 +16,14 @@ on:
 jobs:
   disable:
     runs-on: ubuntu-latest
+    environment: "faithful-determination / production"
     steps:
       - uses: actions/checkout@v4
 
       - name: Disable Kronos via SSH
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          INPUT_HOST: ${{ github.event.inputs.vps_host }}
-        if: env.VPS_HOST != '' || env.INPUT_HOST != ''
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ github.event.inputs.vps_host || secrets.VPS_HOST }}
+          host: ${{ github.event.inputs.vps_host || secrets.VPS_HOST || '204.168.179.200' }}
           username: ${{ secrets.VPS_USER || 'root' }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT || 22 }}
@@ -43,12 +40,8 @@ jobs:
               curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/vps/hetzner_disable_kronos.sh | bash
             fi
 
-      - name: VPS secrets missing
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          INPUT_HOST: ${{ github.event.inputs.vps_host }}
-        if: env.VPS_HOST == '' && env.INPUT_HOST == ''
+      - name: SSH key missing
+        if: failure()
         run: |
-          echo "::error::Configure VPS_HOST secret ou informe vps_host no Run workflow."
-          echo "Ou na Console Hetzner: curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/vps/hetzner_disable_kronos.sh | sudo bash"
-          exit 1
+          echo "::error::SSH falhou — configure VPS_SSH_KEY no environment production ou rode na Console Hetzner:"
+          echo "curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/vps/hetzner_disable_kronos.sh | sudo bash"
