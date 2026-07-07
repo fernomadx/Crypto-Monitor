@@ -30,7 +30,7 @@ def max_stop_pct_for_interval(interval: str) -> float:
     env_key = f"KRONOS_MAX_STOP_PCT_{iv.upper()}"
     if os.environ.get(env_key):
         return float(os.environ[env_key])
-    defaults = {"4h": 0.9, "1h": 1.0, "1d": 2.0}
+    defaults = {"4h": 0.55, "1h": 0.75, "1d": 1.5}
     return float(os.environ.get("KRONOS_MAX_STOP_PCT", str(defaults.get(iv, MAX_STOP_PCT))))
 
 

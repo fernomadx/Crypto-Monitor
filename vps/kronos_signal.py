@@ -52,6 +52,7 @@ from lib.kronos_levels import compute_trade_levels, limit_entry_price  # noqa: E
 from lib.kronos_tracker import format_scorecard_brief, log_predictions, new_run_id  # noqa: E402
 from lib.mexc_klines import INTERVAL_DELTAS, MEXC_KLINES_MAX_LIMIT, fetch_klines  # noqa: E402
 from lib.kronos_quant import apply_to_results, format_kronos_footer  # noqa: E402
+from lib.kronos_filters import apply_breakout_filter  # noqa: E402
 from lib.telegram import send_kronos_alert, send_kronos_photo  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -593,6 +594,9 @@ def execute_run(
             r["align_note"] = note
 
     apply_to_results(results_by_interval)
+    for interval, results in results_by_interval.items():
+        for r in results:
+            apply_breakout_filter(r)
 
     chart_jobs: list[tuple] = []
 

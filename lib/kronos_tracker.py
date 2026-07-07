@@ -35,6 +35,9 @@ FEE_MAKER_PCT = float(os.environ.get("KRONOS_FEE_MAKER_PCT", "0.02"))
 FEE_TAKER_PCT = float(os.environ.get("KRONOS_FEE_TAKER_PCT", "0.05"))
 LIMIT_ENTRY_BARS = int(os.environ.get("KRONOS_LIMIT_ENTRY_BARS", "4"))
 LIMIT_EXIT_BARS = int(os.environ.get("KRONOS_LIMIT_EXIT_BARS", "0"))
+TRAIL_ENABLED = os.environ.get("KRONOS_TRAIL_ENABLED", "1").strip().lower() in ("1", "true", "yes")
+TRAIL_TRIGGER_PCT = float(os.environ.get("KRONOS_TRAIL_TRIGGER_PCT", "0.8"))
+TRAIL_DISTANCE_PCT = float(os.environ.get("KRONOS_TRAIL_DISTANCE_PCT", "0.4"))
 
 
 def init_kronos_tables() -> None:
@@ -204,26 +207,46 @@ def simulate_limit_trade(
 
     exit_px = None
     exit_type = "market_due"
+    active_stop = stop
+    best_favorable = entry_px
+
     for bar in exit_bars:
-        stop_hit = stop is not None and _stop_hit(bar, stop, side)
+        hi, lo = float(bar["high"]), float(bar["low"])
+
+        if TRAIL_ENABLED and stop is not None:
+            if side == "long":
+                best_favorable = max(best_favorable, hi)
+                move_pct = (best_favorable - entry_px) / entry_px * 100.0
+                if move_pct >= TRAIL_TRIGGER_PCT:
+                    trail = best_favorable * (1 - TRAIL_DISTANCE_PCT / 100.0)
+                    active_stop = max(active_stop, trail) if active_stop else trail
+            else:
+                best_favorable = min(best_favorable, lo)
+                move_pct = (entry_px - best_favorable) / entry_px * 100.0
+                if move_pct >= TRAIL_TRIGGER_PCT:
+                    trail = best_favorable * (1 + TRAIL_DISTANCE_PCT / 100.0)
+                    active_stop = min(active_stop, trail) if active_stop else trail
+
+        stop_hit = active_stop is not None and (
+            (side == "long" and lo <= active_stop) or (side == "short" and hi >= active_stop)
+        )
         target_hit = (
-            side == "long" and float(bar["high"]) >= target
+            side == "long" and hi >= target
         ) or (
-            side == "short" and float(bar["low"]) <= target
+            side == "short" and lo <= target
         )
         if stop_hit and target_hit:
-            # Mesma vela: usa distância do open para estimar qual nível foi atingido primeiro
             o = float(bar["open"])
             if side == "long":
-                exit_type = "stop_loss" if abs(o - stop) <= abs(o - target) else "limit_target"
-                exit_px = stop if exit_type == "stop_loss" else target
+                exit_type = "stop_loss" if abs(o - active_stop) <= abs(o - target) else "limit_target"
+                exit_px = active_stop if exit_type == "stop_loss" else target
             else:
-                exit_type = "stop_loss" if abs(o - stop) <= abs(o - target) else "limit_target"
-                exit_px = stop if exit_type == "stop_loss" else target
+                exit_type = "stop_loss" if abs(o - active_stop) <= abs(o - target) else "limit_target"
+                exit_px = active_stop if exit_type == "stop_loss" else target
             break
         if stop_hit:
-            exit_px = stop
-            exit_type = "stop_loss"
+            exit_px = active_stop
+            exit_type = "trailing_stop" if TRAIL_ENABLED else "stop_loss"
             break
         if target_hit:
             exit_px = target
@@ -233,14 +256,13 @@ def simulate_limit_trade(
     if exit_px is None:
         exit_px = due_close
         exit_type = "market_due"
-        # Vencimento: não deixa perda pior que o stop (evita bleed além do risco definido)
-        if stop is not None:
-            if side == "long" and exit_px < stop:
-                exit_px = stop
-                exit_type = "stop_loss"
-            elif side == "short" and exit_px > stop:
-                exit_px = stop
-                exit_type = "stop_loss"
+        if active_stop is not None:
+            if side == "long" and exit_px < active_stop:
+                exit_px = active_stop
+                exit_type = "trailing_stop" if TRAIL_ENABLED else "stop_loss"
+            elif side == "short" and exit_px > active_stop:
+                exit_px = active_stop
+                exit_type = "trailing_stop" if TRAIL_ENABLED else "stop_loss"
 
     fee_exit = _fee_usdc(
         notional,

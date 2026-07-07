@@ -20,8 +20,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from lib.kronos_config import RULES_VERSION, apply_v31_defaults, format_config_footer  # noqa: E402
+from lib.kronos_rules_stamp import check_and_update  # noqa: E402
 
 apply_v31_defaults()
+check_and_update(notify=True)
 
 from lib.telegram import send_kronos_alert  # noqa: E402
 
