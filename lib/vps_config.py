@@ -57,7 +57,7 @@ def record_sync(*, ok: bool, summary: str) -> None:
 def status_text() -> str:
     data = load()
     host = get_host()
-    lines = ["<b>🖥 VPS Hetzner (BTCCURSOR)</b>"]
+    lines = ["<b>🖥 VPS Hetzner (BTCCURSOR)</b>", "Kronos: <i>desligado aqui</i> (ativo no Railway)"]
     if host:
         lines.append(f"Host: <code>{host}</code>")
     else:

@@ -56,33 +56,13 @@ grep -q '^KRONOS_PATH=' "$REPO_DIR/vps/.env" || echo "KRONOS_PATH=$KRONOS_DIR" >
 grep -q '^DB_PATH=' "$REPO_DIR/vps/.env" || echo "DB_PATH=$REPO_DIR/data/kronos_vps.db" >> "$REPO_DIR/vps/.env"
 mkdir -p "$REPO_DIR/data" "$REPO_DIR/vps/charts"
 
-# Kronos v4.0 — regras anti-perda (Hetzner BTCCURSOR)
-apply_env() {
-  local key="$1" val="$2"
-  if grep -q "^${key}=" "$REPO_DIR/vps/.env" 2>/dev/null; then
-    sed -i "s|^${key}=.*|${key}=${val}|" "$REPO_DIR/vps/.env"
-  else
-    echo "${key}=${val}" >> "$REPO_DIR/vps/.env"
-  fi
-}
-apply_env KRONOS_LEVERAGE 3
-apply_env KRONOS_MIN_TARGET_PCT 1.2
-apply_env KRONOS_MIN_RR 3.5
-apply_env KRONOS_MAX_STOP_PCT_4H 0.55
-apply_env KRONOS_BIAS_THRESHOLD_PCT 0.35
-apply_env KRONOS_LIMIT_ENTRY_OFFSET_PCT 0.08
-apply_env KRONOS_SCORE_TICKERS BTC
-apply_env KRONOS_TRAIL_ENABLED 1
-apply_env KRONOS_TRAIL_TRIGGER_PCT 0.8
-apply_env KRONOS_TRAIL_DISTANCE_PCT 0.4
-apply_env QUANT_KRONOS_MODE veto
-echo "==> Regras Kronos v5.0 aplicadas em vps/.env"
+chmod +x "$REPO_DIR/vps/hetzner_disable_kronos.sh" "$REPO_DIR/vps/hetzner_test.sh"
+bash "$REPO_DIR/vps/hetzner_disable_kronos.sh"
 
-chmod +x "$REPO_DIR/vps/hetzner_test.sh"
 export REPO_DIR
-ARGS=(--score)
+ARGS=()
 [ "$RUN_SIGNAL" -eq 1 ] && ARGS+=(--signal)
 bash "$REPO_DIR/vps/hetzner_test.sh" "${ARGS[@]}"
 
 echo ""
-echo "=== Bootstrap concluído — veja Telegram [KRONOS] scorecard ==="
+echo "=== Bootstrap concluído — Kronos OFF na Hetzner (ativo só no Railway) ==="

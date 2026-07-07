@@ -1,4 +1,4 @@
-name: Deploy Kronos to VPS
+name: Disable Kronos on VPS
 
 on:
   workflow_dispatch:
@@ -9,12 +9,12 @@ on:
         type: string
 
 jobs:
-  deploy:
+  disable:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Deploy via SSH
+      - name: Disable Kronos via SSH
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           INPUT_HOST: ${{ github.event.inputs.vps_host }}
@@ -29,14 +29,14 @@ jobs:
           script: |
             set -e
             export REPO_DIR=/opt/crypto-monitor
-            export KRONOS_DIR=/opt/Kronos
-            git clone https://github.com/fernomadx/Crypto-Monitor.git "$REPO_DIR" 2>/dev/null || true
-            cd "$REPO_DIR" && git pull origin main
-            if [ -x "$REPO_DIR/vps/.venv/bin/pip" ]; then
-              "$REPO_DIR/vps/.venv/bin/pip" install -r vps/requirements-railway.txt -q
+            if [ -d "$REPO_DIR/.git" ]; then
+              cd "$REPO_DIR" && git pull origin main
+              chmod +x vps/hetzner_disable_kronos.sh vps/hetzner_test.sh
+              bash vps/hetzner_disable_kronos.sh
+              bash vps/hetzner_test.sh
+            else
+              curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/vps/hetzner_disable_kronos.sh | bash
             fi
-            chmod +x vps/hetzner_test.sh scripts/hetzner-bootstrap-test.sh
-            bash vps/hetzner_test.sh --score
 
       - name: VPS secrets missing
         env:
@@ -45,6 +45,5 @@ jobs:
         if: env.VPS_HOST == '' && env.INPUT_HOST == ''
         run: |
           echo "::error::Configure VPS_HOST secret ou informe vps_host no Run workflow."
-          echo "Guia: scripts/setup-vps-github-secrets.md"
-          echo "Teste manual: curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/scripts/hetzner-bootstrap-test.sh | sudo bash"
+          echo "Ou na Console Hetzner: curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/vps/hetzner_disable_kronos.sh | sudo bash"
           exit 1

@@ -54,12 +54,14 @@ fi
 # Kronos repo
 [ -d "${KRONOS_PATH:-/opt/Kronos}" ] && ok "Kronos em ${KRONOS_PATH:-/opt/Kronos}" || bad "KRONOS_PATH não encontrado"
 
-# Cron
+# Cron — Kronos deve estar OFF na Hetzner (Railway é o único ativo)
 if crontab -l 2>/dev/null | grep -qE 'kronos|run_kronos'; then
-  ok "Cron Kronos instalado"
+  bad "Cron Kronos ainda ativo — rode: bash vps/hetzner_disable_kronos.sh"
   crontab -l 2>/dev/null | grep -E 'kronos|run_kronos' | sed 's/^/      /'
+elif [ "${KRONOS_VPS_ENABLED:-0}" = "1" ]; then
+  warn "KRONOS_VPS_ENABLED=1 mas cron ausente"
 else
-  warn "Cron Kronos não encontrado (cole vps/crontab.example)"
+  ok "Cron Kronos desligado (correto — Railway ativo)"
 fi
 
 # Logs recentes

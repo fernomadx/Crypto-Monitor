@@ -104,14 +104,24 @@ Actions → **Deploy Kronos to VPS** → **Run workflow**
 
 ## 5. Railway vs Hetzner (BTCCURSOR)
 
+**Kronos roda só no Railway.** A Hetzner não deve enviar sinais `[KRONOS]` (evita duplicar alertas no mesmo bot).
+
 | | Railway | Hetzner BTCCURSOR |
 |--|---------|-------------------|
-| Bot | `TELEGRAM_*` | `KRONOS_TELEGRAM_*` |
+| Kronos | **Ativo** (daemon + crontab) | **Desligado** (`hetzner_disable_kronos.sh`) |
+| Bot | `TELEGRAM_*` | QUANT opcional; Kronos só com `KRONOS_TELEGRAM_*` dedicado |
 | DB | `/data/crypto_monitor.db` | `/opt/crypto-monitor/data/kronos_vps.db` |
-| Cron | no container | `crontab` do host |
-| Custo | RAM limitada | CPX31 ~fixo/mês, CPU estável |
+| Cron | no container | sem linhas `kronos_*` |
 
-Para **não duplicar** alertas Kronos no bot do Railway, remova as linhas `kronos_*` do `crontab` do Dockerfile no Railway (ou desative só o Kronos lá).
+Desligar Kronos na Hetzner:
+
+```bash
+cd /opt/crypto-monitor && git pull && sudo bash vps/hetzner_disable_kronos.sh
+```
+
+Ou no Telegram (Railway): `/vps test` — sincroniza e remove cron Kronos via SSH.
+
+Para **reativar** Kronos na Hetzner (só com bot dedicado): `KRONOS_VPS_ENABLED=1` + `KRONOS_TELEGRAM_*` + `install.sh`.
 
 ---
 

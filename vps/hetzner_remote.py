@@ -18,12 +18,13 @@ logger = logging.getLogger(__name__)
 REMOTE_BOOTSTRAP = """
 set -e
 export REPO_DIR=/opt/crypto-monitor
-if [ -f "$REPO_DIR/vps/hetzner_test.sh" ]; then
+if [ -d "$REPO_DIR/.git" ]; then
   cd "$REPO_DIR" && git pull origin main
-  chmod +x vps/hetzner_test.sh scripts/hetzner-bootstrap-test.sh
-  bash scripts/hetzner-bootstrap-test.sh || bash vps/hetzner_test.sh --score
+  chmod +x vps/hetzner_disable_kronos.sh vps/hetzner_test.sh
+  bash vps/hetzner_disable_kronos.sh
+  bash vps/hetzner_test.sh
 else
-  curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/scripts/hetzner-bootstrap-test.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/vps/hetzner_disable_kronos.sh | bash
 fi
 """
 

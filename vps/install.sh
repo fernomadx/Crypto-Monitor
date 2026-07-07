@@ -84,20 +84,30 @@ exec "$PY" "$REPO_DIR/vps/kronos_signal.py"
 EOF
 chmod +x "$RUN_WRAPPER"
 
-echo "==> Cron ($CRON_SCHEDULE)"
-CRON_LINE="$CRON_SCHEDULE $RUN_WRAPPER >> $LOG_FILE 2>&1"
-(crontab -l 2>/dev/null | grep -v 'kronos_signal.py' | grep -v 'run_kronos.sh' || true; echo "$CRON_LINE") | crontab -
+if [ "${KRONOS_VPS_ENABLED:-0}" != "1" ]; then
+  echo "==> Kronos cron NÃO instalado (Kronos roda só no Railway)."
+  echo "    Para ativar nesta VPS: export KRONOS_VPS_ENABLED=1 + bot KRONOS_TELEGRAM_* dedicado."
+  bash "$REPO_DIR/vps/hetzner_disable_kronos.sh" 2>/dev/null || true
+else
+  echo "==> Cron ($CRON_SCHEDULE)"
+  CRON_LINE="$CRON_SCHEDULE $RUN_WRAPPER >> $LOG_FILE 2>&1"
+  (crontab -l 2>/dev/null | grep -v 'kronos_signal.py' | grep -v 'run_kronos.sh' || true; echo "$CRON_LINE") | crontab -
 
-echo "==> Teste inicial (pode levar 10–20 min na 1ª vez — download do modelo)"
-"$RUN_WRAPPER" && echo "==> Teste OK — alerta enviado ao Telegram" || {
-  echo "==> Teste falhou — veja $LOG_FILE"
-  tail -50 "$LOG_FILE" 2>/dev/null || true
-  exit 1
-}
+  echo "==> Teste inicial (pode levar 10–20 min na 1ª vez — download do modelo)"
+  "$RUN_WRAPPER" && echo "==> Teste OK — alerta enviado ao Telegram" || {
+    echo "==> Teste falhou — veja $LOG_FILE"
+    tail -50 "$LOG_FILE" 2>/dev/null || true
+    exit 1
+  }
+fi
 
 echo ""
 echo "=== Instalação concluída ==="
-echo "Cron: $CRON_SCHEDULE"
-echo "Log:  $LOG_FILE"
-echo "Run:  $RUN_WRAPPER"
-crontab -l | grep kronos || true
+if [ "${KRONOS_VPS_ENABLED:-0}" = "1" ]; then
+  echo "Cron: $CRON_SCHEDULE"
+  echo "Log:  $LOG_FILE"
+  echo "Run:  $RUN_WRAPPER"
+  crontab -l | grep kronos || true
+else
+  echo "Kronos: OFF nesta VPS (Railway ativo)"
+fi
