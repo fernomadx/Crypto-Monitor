@@ -14,6 +14,32 @@ from lib.trade_desk.indicators import enrich
 from lib.trade_desk.models import Side
 
 
+def _json_safe(value: Any) -> Any:
+    """Converte numpy/pandas escalares para tipos nativos (json.dumps)."""
+    if value is None or isinstance(value, (str, bool, float)):
+        return value
+    # bool é subclasse de int — checar bool acima; int nativo aqui
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    # numpy.bool_ / numpy.integer / numpy.floating (sem importar numpy)
+    item = getattr(value, "item", None)
+    if callable(item):
+        try:
+            return _json_safe(item())
+        except Exception:
+            pass
+    if hasattr(value, "isoformat"):
+        try:
+            return value.isoformat()
+        except Exception:
+            pass
+    return str(value)
+
+
 @dataclass
 class Combo5Signal:
     ok: bool
@@ -43,7 +69,8 @@ class Combo5Signal:
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d["side"] = self.side.value
-        return d
+        # Pandas/Numpy bool_ quebra json.dumps ("Object of type bool is not JSON serializable")
+        return _json_safe(d)
 
 
 def _momentum_bias(closes: pd.Series, bars: int, thr: float) -> tuple[str, float]:
@@ -135,8 +162,10 @@ def evaluate_combo5(
     price = float(d1["close"].iloc[-1])
     atr_pct = float(d1["atr"].iloc[-1] / price * 100) if "atr" in d1.columns else 1.0
     row4 = d4.iloc[-1]
-    ema4_ok = (bias4 == "BULLISH" and row4["ema_fast"] > row4["ema_slow"]) or (
-        bias4 == "BEARISH" and row4["ema_fast"] < row4["ema_slow"]
+    # Comparações pandas/numpy devolvem numpy.bool_ — forçar bool nativo
+    ema4_ok = bool(
+        (bias4 == "BULLISH" and row4["ema_fast"] > row4["ema_slow"])
+        or (bias4 == "BEARISH" and row4["ema_fast"] < row4["ema_slow"])
     )
     if bias4 == "NEUTRO":
         ema4_ok = bool(row4["ema_fast"] > row4["ema_slow"])  # só informativo
