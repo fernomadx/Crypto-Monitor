@@ -29,6 +29,16 @@ class Combo5Signal:
     strength_pct: float
     reasons: list[str] = field(default_factory=list)
     blocks: list[str] = field(default_factory=list)
+    # análise horária
+    bias_1h: str = "NEUTRO"
+    bias_4h: str = "NEUTRO"
+    bias_1d: str = "NEUTRO"
+    strength_signed_pct: float = 0.0
+    atr_pct: float = 0.0
+    ema_4h_aligned: bool | None = None
+    desk_side: str = "HOLD"
+    desk_detail: str = ""
+    threshold_pct: float = 0.35
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -87,7 +97,8 @@ def evaluate_combo5(
     sl_cap = float(os.environ.get("COMBO5_SL_CAP", "0.045"))
 
     empty = Combo5Signal(
-        False, Side.HOLD, symbol, 0.0, 0.0, 0.0, 0.03, 0.06, 0.0, "NEUTRO", 0.0, [], ["no data"]
+        False, Side.HOLD, symbol, 0.0, 0.0, 0.0, 0.03, 0.06, 0.0, "NEUTRO", 0.0, [], ["no data"],
+        threshold_pct=thr,
     )
     if df_1h is None or df_4h is None or df_1d is None:
         return empty
@@ -103,7 +114,8 @@ def evaluate_combo5(
     d1d = _prep(df_1d)
     if len(d1) < 80 or len(d4) < 40 or len(d1d) < 20:
         return Combo5Signal(
-            False, Side.HOLD, symbol, 0.0, 0.0, 0.0, 0.03, 0.06, 0.0, "NEUTRO", 0.0, [], ["insufficient history"]
+            False, Side.HOLD, symbol, 0.0, 0.0, 0.0, 0.03, 0.06, 0.0, "NEUTRO", 0.0, [],
+            ["insufficient history"], threshold_pct=thr,
         )
 
     ts = d4.index[-1]
@@ -116,34 +128,64 @@ def evaluate_combo5(
 
     bias4, strength_signed = _momentum_bias(d4["close"], 4, thr)
     strength = abs(strength_signed)
+    b1 = _bias_at(d1, ts, 4, thr)
+    bd = _bias_at(d1d, ts, 3, thr)
     blocks: list[str] = []
     reasons: list[str] = []
     price = float(d1["close"].iloc[-1])
+    atr_pct = float(d1["atr"].iloc[-1] / price * 100) if "atr" in d1.columns else 1.0
+    row4 = d4.iloc[-1]
+    ema4_ok = (bias4 == "BULLISH" and row4["ema_fast"] > row4["ema_slow"]) or (
+        bias4 == "BEARISH" and row4["ema_fast"] < row4["ema_slow"]
+    )
+    if bias4 == "NEUTRO":
+        ema4_ok = bool(row4["ema_fast"] > row4["ema_slow"])  # só informativo
+        ema4_ok_flag: bool | None = None
+    else:
+        ema4_ok_flag = ema4_ok
+
+    desk_side, desk_conf, desk_detail = _desk_side_conf(d1)
+
+    def _pack(**kwargs: Any) -> Combo5Signal:
+        base = dict(
+            bias_1h=b1,
+            bias_4h=bias4,
+            bias_1d=bd,
+            strength_signed_pct=float(strength_signed),
+            atr_pct=float(atr_pct),
+            ema_4h_aligned=ema4_ok_flag,
+            desk_side=desk_side.value,
+            desk_detail=desk_detail[:120],
+            threshold_pct=thr,
+        )
+        base.update(kwargs)
+        return Combo5Signal(**base)
 
     if bias4 == "NEUTRO":
         blocks.append(f"Kronos 4h NEUTRO (thr ±{thr}%)")
-        return Combo5Signal(False, Side.HOLD, symbol, price, 0.0, 0.0, 0.03, 0.06, 0.0, bias4, strength, reasons, blocks)
+        return _pack(
+            ok=False, side=Side.HOLD, symbol=symbol, price=price, stop_price=0.0,
+            take_profit_price=0.0, sl_pct=0.03, tp_pct=0.06, confidence=desk_conf,
+            kronos_bias=bias4, strength_pct=strength, reasons=reasons, blocks=blocks,
+        )
 
-    b1 = _bias_at(d1, ts, 4, thr)
-    bd = _bias_at(d1d, ts, 3, thr)
     if not (bias4 == b1 == bd):
         blocks.append(f"3TF desalinhado (4h={bias4}, 1h={b1}, 1d={bd})")
-        return Combo5Signal(False, Side.HOLD, symbol, price, 0.0, 0.0, 0.03, 0.06, 0.0, bias4, strength, reasons, blocks)
+        return _pack(
+            ok=False, side=Side.HOLD, symbol=symbol, price=price, stop_price=0.0,
+            take_profit_price=0.0, sl_pct=0.03, tp_pct=0.06, confidence=desk_conf,
+            kronos_bias=bias4, strength_pct=strength, reasons=reasons, blocks=blocks,
+        )
     reasons.append(f"Kronos 3TF alinhado {bias4} (força {strength:.2f}%)")
 
     if strength < min_strength:
         blocks.append(f"força {strength:.2f}% < mínimo {min_strength}%")
 
-    row4 = d4.iloc[-1]
-    ema4_ok = (bias4 == "BULLISH" and row4["ema_fast"] > row4["ema_slow"]) or (
-        bias4 == "BEARISH" and row4["ema_fast"] < row4["ema_slow"]
-    )
     if not ema4_ok:
         blocks.append("EMA 4h não alinhada ao viés Kronos")
     else:
         reasons.append("EMA 4h alinhada")
 
-    desk_side, desk_conf, desk_detail = _desk_side_conf(d1)
     want = Side.BUY if bias4 == "BULLISH" else Side.SELL
     if desk_side != want:
         blocks.append(f"desk {desk_side.value} diverge de Kronos {bias4}")
@@ -152,7 +194,6 @@ def evaluate_combo5(
     else:
         reasons.append(f"desk conf {desk_conf:.2f} ({desk_detail[:80]})")
 
-    atr_pct = float(d1["atr"].iloc[-1] / price * 100) if "atr" in d1.columns else 1.0
     if atr_pct < atr_lo or atr_pct > atr_hi:
         blocks.append(f"ATR% {atr_pct:.2f} fora de [{atr_lo},{atr_hi}]")
     else:
@@ -168,7 +209,7 @@ def evaluate_combo5(
         tp = price * (1 - tp_pct)
 
     ok = len(blocks) == 0
-    return Combo5Signal(
+    return _pack(
         ok=ok,
         side=want if ok else Side.HOLD,
         symbol=symbol,

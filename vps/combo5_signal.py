@@ -115,8 +115,8 @@ def _emit(msg: str) -> None:
 
 
 def _should_send_heartbeat(state_dir: Path) -> bool:
-    """Manda status periódico (default 30 min) para provar que o bot está vivo."""
-    every_min = int(os.environ.get("COMBO5_HEARTBEAT_MINUTES", "30"))
+    """Análise periódica (default 60 min). 0 = só via COMBO5_FORCE_STATUS (cron horário)."""
+    every_min = int(os.environ.get("COMBO5_HEARTBEAT_MINUTES", "60"))
     if every_min <= 0:
         return False
     marker = state_dir / "last_heartbeat.txt"
@@ -142,23 +142,57 @@ def _format_status(status: dict) -> str:
     sig = status.get("signal") or {}
     open_t = status.get("open")
     blocks = sig.get("blocks") or []
+    reasons = sig.get("reasons") or []
+    thr = float(sig.get("threshold_pct") or 0.35)
+    strength = float(sig.get("strength_pct") or 0)
+    signed = float(sig.get("strength_signed_pct") or 0)
+    atr = float(sig.get("atr_pct") or 0)
+    ema = sig.get("ema_4h_aligned")
+    ema_txt = "sim" if ema is True else ("não" if ema is False else "n/d (4h neutro)")
+
+    icon = {"BUY": "🟢", "SELL": "🔴", "HOLD": "⚪"}.get(str(sig.get("side")), "⚪")
     lines = [
-        f"⏱ Status COMBO5 — {status.get('updated_at')}",
-        f"Par: {status.get('symbol')} @ {status.get('price')}",
-        f"Sinal: {sig.get('side')} | ok={sig.get('ok')} | Kronos {sig.get('kronos_bias')} "
-        f"| força {float(sig.get('strength_pct') or 0):.2f}%",
-        f"Ações: {status.get('actions') or ['hold']}",
+        f"📊 Análise horária COMBO5 — {status.get('updated_at')}",
+        f"{icon} {status.get('symbol')} @ {float(status.get('price') or 0):.2f}",
+        "",
+        "Kronos 3TF (proxy momentum):",
+        f"  1h={sig.get('bias_1h')} | 4h={sig.get('bias_4h')} | 1d={sig.get('bias_1d')}",
+        f"  Força 4h: {signed:+.2f}% (|{strength:.2f}%|) | thr ±{thr}%",
+        f"  EMA 4h alinhada: {ema_txt}",
+        "",
+        "Desk (técnico+momentum+estrutura):",
+        f"  Lado {sig.get('desk_side')} | conf {float(sig.get('confidence') or 0):.2f}",
+        f"  {sig.get('desk_detail') or '—'}",
+        "",
+        f"Volatilidade ATR%: {atr:.2f} (janela ok 0.5–1.1)",
+        f"Decisão: {sig.get('side')} | setup_ok={sig.get('ok')}",
     ]
+    if reasons:
+        lines.append("Pontos a favor: " + "; ".join(str(r) for r in reasons[:4]))
+    if blocks:
+        lines.append("Bloqueios (por isso não entrou): " + "; ".join(str(b) for b in blocks[:4]))
+    else:
+        lines.append("Sem bloqueios — setup válido para entrada.")
+
     if open_t:
-        lines.append(
-            f"Aberto: Nº {open_t.get('number')} {open_t.get('side')} "
-            f"entrada {open_t.get('entry_price')} SL {open_t.get('stop_loss')} TP {open_t.get('take_profit')}"
+        lines.extend(
+            [
+                "",
+                f"Trade aberto Nº {open_t.get('number')} {open_t.get('side')}",
+                f"  Entrada {open_t.get('entry_price')} | SL {open_t.get('stop_loss')} | TP {open_t.get('take_profit')}",
+            ]
         )
     else:
-        lines.append("Sem trade aberto.")
-    if blocks:
-        lines.append("Bloqueios: " + "; ".join(str(b) for b in blocks[:3]))
-    lines.append("Entrada/saída só avisam quando houver trade (GAIN/LOSS).")
+        lines.extend(["", "Sem trade aberto agora.", f"Próxima entrada seria Nº {status.get('next_entry_number')}"])
+
+    if sig.get("ok") and sig.get("side") in {"BUY", "SELL"}:
+        lines.append(
+            f"Níveis se entrar: SL {float(sig.get('stop_price') or 0):.2f} | "
+            f"TP {float(sig.get('take_profit_price') or 0):.2f}"
+        )
+
+    lines.append("")
+    lines.append("Gestão SL/TP roda a cada 5 min; esta análise sai 1x/hora (junto do ciclo Kronos).")
     return "\n".join(lines)
 
 
