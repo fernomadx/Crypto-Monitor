@@ -114,6 +114,54 @@ def _emit(msg: str) -> None:
     send_combo5_alert("COMBO5", f"<pre>{plain}</pre>")
 
 
+def _should_send_heartbeat(state_dir: Path) -> bool:
+    """Manda status periódico (default 30 min) para provar que o bot está vivo."""
+    every_min = int(os.environ.get("COMBO5_HEARTBEAT_MINUTES", "30"))
+    if every_min <= 0:
+        return False
+    marker = state_dir / "last_heartbeat.txt"
+    now = datetime.now(timezone.utc)
+    if not marker.exists():
+        return True
+    try:
+        last = datetime.fromisoformat(marker.read_text(encoding="utf-8").strip())
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        return (now - last).total_seconds() >= every_min * 60
+    except Exception:
+        return True
+
+
+def _mark_heartbeat(state_dir: Path) -> None:
+    (state_dir / "last_heartbeat.txt").write_text(
+        datetime.now(timezone.utc).isoformat(), encoding="utf-8"
+    )
+
+
+def _format_status(status: dict) -> str:
+    sig = status.get("signal") or {}
+    open_t = status.get("open")
+    blocks = sig.get("blocks") or []
+    lines = [
+        f"⏱ Status COMBO5 — {status.get('updated_at')}",
+        f"Par: {status.get('symbol')} @ {status.get('price')}",
+        f"Sinal: {sig.get('side')} | ok={sig.get('ok')} | Kronos {sig.get('kronos_bias')} "
+        f"| força {float(sig.get('strength_pct') or 0):.2f}%",
+        f"Ações: {status.get('actions') or ['hold']}",
+    ]
+    if open_t:
+        lines.append(
+            f"Aberto: Nº {open_t.get('number')} {open_t.get('side')} "
+            f"entrada {open_t.get('entry_price')} SL {open_t.get('stop_loss')} TP {open_t.get('take_profit')}"
+        )
+    else:
+        lines.append("Sem trade aberto.")
+    if blocks:
+        lines.append("Bloqueios: " + "; ".join(str(b) for b in blocks[:3]))
+    lines.append("Entrada/saída só avisam quando houver trade (GAIN/LOSS).")
+    return "\n".join(lines)
+
+
 def process_symbol(symbol: str, journal: TradeJournal, state_dir: Path) -> dict:
     df_1h = fetch_klines(symbol, "1h", limit=120)
     df_4h = fetch_klines(symbol, "4h", limit=120)
@@ -198,6 +246,14 @@ def main() -> None:
     multi = os.environ.get("COMBO5_MULTI", "0").strip().lower() in {"1", "true", "yes", "on"}
     targets = symbols if multi else symbols[:1]
 
+    force_status = os.environ.get("COMBO5_FORCE_STATUS", "0").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    send_hb = force_status or _should_send_heartbeat(state_dir)
+
     for symbol in targets:
         try:
             status = process_symbol(symbol, journal, state_dir)
@@ -211,6 +267,13 @@ def main() -> None:
             )
             if status["signal"]["blocks"]:
                 logger.info("blocks: %s", status["signal"]["blocks"][:3])
+            # Sempre avisa em trade; se não houve ação, manda heartbeat periódico
+            if send_hb and not status["actions"]:
+                _emit(_format_status(status))
+                _mark_heartbeat(state_dir)
+                send_hb = False
+            elif status["actions"]:
+                _mark_heartbeat(state_dir)
         except Exception as exc:
             logger.exception("COMBO5 falhou em %s: %s", symbol, exc)
             try:

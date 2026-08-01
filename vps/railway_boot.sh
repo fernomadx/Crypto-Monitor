@@ -56,6 +56,24 @@ PY
 
 /app/vps/ensure_quant_bot.sh || true
 
+echo "COMBO5 boot: aviso + 1 ciclo..."
+python - <<'PY' || true
+import os, sys
+sys.path.insert(0, "/app")
+try:
+    from lib.telegram import send_combo5_alert
+    send_combo5_alert(
+        "Online",
+        "Bot <b>COMBO5</b> ativo no Railway.\n"
+        "Avisos: <code>ENTRADA Nº N</code> / <code>FECHAMENTO GAIN|LOSS</code>\n"
+        "Heartbeat de status a cada ~30 min se não houver trade.\n"
+        "<i>Paper — não é ordem automática.</i>",
+    )
+except Exception as e:
+    print("combo5 boot telegram:", e)
+PY
+COMBO5_FORCE_STATUS=1 python /app/vps/combo5_signal.py >> /data/combo5.log 2>&1 || true
+
 echo "Hetzner: desligando Kronos duplicado (one-shot)..."
 python - <<'PY' || true
 import os, sys
