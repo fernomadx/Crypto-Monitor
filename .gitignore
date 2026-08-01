@@ -15,6 +15,7 @@ __pycache__/
 venv/
 vps/.venv/
 vps/charts/*.png
+vps/combo5_state/
 .python-version
 
 # OS
