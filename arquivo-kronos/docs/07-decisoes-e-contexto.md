@@ -1,5 +1,6 @@
 # Decisões e contexto (linha do tempo)
 
+- **COMBO5 na Hetzner (2026-08)** — análise + `/combo5` rodam na VPS (`scripts/hetzner-deploy-combo5.sh`); cron 5 min + `:10` UTC; `quant_bot` com watchdog local.
 - **COMBO5 sob demanda (2026-08)** — comandos Telegram `/combo5` · `/analise` · `/c5` no `quant_bot` disparam o mesmo ciclo de análise (candles MEXC + 3TF + desk) fora do cron de 5 min / horário; opcional `/combo5 BTC`.
 - **COMBO5 JSON bool (2026-08)** — `ema_4h_aligned` vinha como `numpy.bool_` das comparações pandas; `json.dumps` do status gerava `Object of type bool is not JSON serializable` a cada 5 min no Telegram. Fix: `bool(...)` na origem + `_json_safe` em `Combo5Signal.to_dict()`.
 - **Kronos no Railway** — mesmo container que crypto-monitor; prefixo `[KRONOS]` no Telegram.
