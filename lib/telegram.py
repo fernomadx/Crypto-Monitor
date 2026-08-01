@@ -78,6 +78,37 @@ def send_alert(title: str, body: str, emoji: str = "🔔") -> bool:
     return send(text)
 
 
+def send_combo5_alert(title: str, body: str) -> bool:
+    """
+    Alerta COMBO5 (entrada/saída numerada) — mesmo canal Kronos se disponível.
+    Prefixo [COMBO5].
+    """
+    text = (
+        f"🎯 <b>[COMBO5]</b> {title}\n\n{body}\n\n"
+        "<i>Paper/sinal COMBO5 — não é ordem automática na exchange. "
+        "Confirme stop/alvo antes de operar.</i>"
+    )
+    try:
+        _, chat_id, base_url = _kronos_telegram_config()
+        resp = requests.post(
+            f"{base_url}/sendMessage",
+            json={
+                "chat_id": chat_id,
+                "text": text,
+                "parse_mode": "HTML",
+                "disable_web_page_preview": True,
+            },
+            timeout=10,
+        )
+        if not resp.ok:
+            logger.error("COMBO5 Telegram error %s: %s", resp.status_code, resp.text[:200])
+            return False
+        return True
+    except Exception as exc:
+        logger.error("COMBO5 Telegram send failed: %s", exc)
+        return False
+
+
 def send_kronos_alert(title: str, body: str) -> bool:
     """
     Alerta Kronos — bot dedicado (KRONOS_TELEGRAM_*) ou fallback Railway.

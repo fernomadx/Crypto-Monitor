@@ -18,3 +18,7 @@ schedule==1.2.2
 python-dotenv==1.0.1
 pytz==2024.1
 paramiko>=3.4.0
+
+# COMBO5 / Trade Desk (OHLCV indicators)
+pandas>=2.0.0
+numpy>=1.26.0
