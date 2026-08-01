@@ -109,9 +109,18 @@ Actions → **Deploy Kronos to VPS** → **Run workflow**
 | | Railway | Hetzner BTCCURSOR |
 |--|---------|-------------------|
 | Kronos | **Ativo** (daemon + crontab) | **Desligado** (`hetzner_disable_kronos.sh`) |
-| Bot | `TELEGRAM_*` | QUANT opcional; Kronos só com `KRONOS_TELEGRAM_*` dedicado |
+| COMBO5 | opcional no container | **Ativo** — `scripts/hetzner-deploy-combo5.sh` |
+| Bot | `TELEGRAM_*` | QUANT + `/combo5`; Kronos só com `KRONOS_TELEGRAM_*` dedicado |
 | DB | `/data/crypto_monitor.db` | `/opt/crypto-monitor/data/kronos_vps.db` |
-| Cron | no container | sem linhas `kronos_*` |
+| Cron | no container | COMBO5 5 min + `:10`; sem linhas `kronos_*` |
+
+### COMBO5 + comando `/combo5`
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/scripts/hetzner-deploy-combo5.sh | sudo bash
+```
+
+Telegram: `/combo5` · `/analise` · `/c5` (ou `/combo5 BTC`).
 
 Desligar Kronos na Hetzner:
 

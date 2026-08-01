@@ -55,8 +55,10 @@ copy vps/requirements.txt
 copy vps/requirements-railway.txt
 copy vps/.env.example
 copy vps/BTCCURSOR.md
+copy vps/hetzner_bootstrap_combo5.sh
 copy vps/README.md
 copy vps/crontab.example
+copy scripts/hetzner-deploy-combo5.sh
 copy Dockerfile
 copy Dockerfile.kronos
 copy crontab
@@ -64,6 +66,7 @@ copy crontab.kronos
 copy railway.toml
 copy .github/workflows/kronos-daily-report.yml workflows/kronos-daily-report.yml
 copy .github/workflows/deploy-kronos-vps.yml workflows/deploy-kronos-vps.yml
+copy .github/workflows/deploy-combo5-hetzner.yml workflows/deploy-combo5-hetzner.yml
 copy .github/workflows/kronos-telegram-cron.yml workflows/kronos-telegram-cron.yml
 copy .github/workflows/arquivo-kronos-pages.yml workflows/arquivo-kronos-pages.yml
 copy .github/workflows/sync-arquivo-kronos.yml workflows/sync-arquivo-kronos.yml
