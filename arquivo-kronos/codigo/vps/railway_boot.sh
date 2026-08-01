@@ -65,8 +65,9 @@ try:
     send_combo5_alert(
         "Online",
         "Bot <b>COMBO5</b> ativo no Railway.\n"
-        "Avisos: <code>ENTRADA Nº N</code> / <code>FECHAMENTO GAIN|LOSS</code>\n"
-        "Heartbeat de status a cada ~30 min se não houver trade.\n"
+        "• Análise horária às <code>:10</code> UTC (junto do ciclo Kronos 1H)\n"
+        "• Avisos <code>ENTRADA Nº N</code> / <code>FECHAMENTO GAIN|LOSS</code>\n"
+        "• Gestão de stop/alvo a cada 5 min\n"
         "<i>Paper — não é ordem automática.</i>",
     )
 except Exception as e:
