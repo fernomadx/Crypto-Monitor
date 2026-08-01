@@ -1,5 +1,7 @@
 # Decisões e contexto (linha do tempo)
 
+- **COMBO5 sob demanda (2026-08)** — comandos Telegram `/combo5` · `/analise` · `/c5` no `quant_bot` disparam o mesmo ciclo de análise (candles MEXC + 3TF + desk) fora do cron de 5 min / horário; opcional `/combo5 BTC`.
+- **COMBO5 JSON bool (2026-08)** — `ema_4h_aligned` vinha como `numpy.bool_` das comparações pandas; `json.dumps` do status gerava `Object of type bool is not JSON serializable` a cada 5 min no Telegram. Fix: `bool(...)` na origem + `_json_safe` em `Combo5Signal.to_dict()`.
 - **Kronos no Railway** — mesmo container que crypto-monitor; prefixo `[KRONOS]` no Telegram.
 - **Ordens limite + taxas MEXC** — scorecard simula maker/taker, não market puro.
 - **Margem 100 USDC** — alavancagem **10x** na sim (antes 20x; 10x para métrica menos distorcida).

@@ -5,6 +5,7 @@ Bot QUANT — pesquisa sob demanda no Telegram.
 Comandos (só responde TELEGRAM_CHAT_ID autorizado):
   /quant, /contexto     — estado atual (notícias de impacto)
   /pesquisa <pergunta>  — consulta LLMQuant + Haiku
+  /combo5, /analise     — análise COMBO5 ao vivo (fora do cron)
   /btc /eth /sol        — snapshot mercado + contexto
   /scorecard            — acerto Kronos (simulação 4H)
   /vps [IP|test]        — configura/testa Hetzner BTCCURSOR
@@ -116,6 +117,8 @@ def _help_text() -> str:
         "<b>🧠 QUANT — comandos</b>\n\n"
         "/quant ou /contexto — notícias de impacto recentes\n"
         "/pesquisa &lt;pergunta&gt; — pesquisa Quant Wiki + papers\n"
+        "/combo5 ou /analise — análise COMBO5 <b>agora</b> (fora do cron)\n"
+        "/combo5 BTC — mesmo, forçando o par\n"
         "/btc · /eth · /sol — preço + contexto\n"
         "/ping — teste de conexão (também aceita /pin)\n"
         "/scorecard — acerto das entradas Kronos (7d/30d, simulação 4H)\n"
@@ -123,13 +126,30 @@ def _help_text() -> str:
         "/resetscorecard — apaga catálogo e recomeça scorecard v5 limpo\n"
         "/vps — status Hetzner · <code>/vps test</code> desliga Kronos duplicado · <code>/vps IP</code>\n"
         "/help — esta ajuda\n\n"
-        f"<i>Canal [QUANT] separado do [KRONOS].</i>\n"
+        f"<i>Canal [QUANT] separado do [KRONOS]/[COMBO5].</i>\n"
         f"<i>{_llmquant_status_line()}</i>"
     )
 
 
 def _handle_context() -> str:
     return format_kronos_footer()
+
+
+def _handle_combo5(args: str) -> str:
+    """Análise COMBO5 sob demanda — mesmo motor do cron 5 min / horário."""
+    from vps.combo5_signal import analyze_now
+
+    try:
+        body = analyze_now(args.strip() or None)
+    except Exception as exc:
+        logger.exception("combo5 on-demand: %s", exc)
+        return f"⚠️ Falha na análise COMBO5: {exc}"
+    plain = (
+        body.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+    return f"🎯 <b>[COMBO5]</b> sob demanda\n\n<pre>{plain}</pre>"
 
 
 def _handle_scorecard(args: str) -> str:
@@ -243,10 +263,13 @@ def _dispatch(text: str) -> str:
         )
         return (
             f"<b>QUANT online</b>\n{api}\n{alerts}\n"
-            f"Modo Kronos: <code>{os.environ.get('QUANT_KRONOS_MODE', 'warn')}</code>"
+            f"Modo Kronos: <code>{os.environ.get('QUANT_KRONOS_MODE', 'warn')}</code>\n"
+            f"COMBO5: <code>/combo5</code> ou <code>/analise</code>"
         )
     if cmd in ("/quant", "/contexto"):
         return _handle_context()
+    if cmd in ("/combo5", "/analise", "/análise", "/c5"):
+        return _handle_combo5(rest)
     if cmd in ("/pesquisa", "/research", "/p"):
         if not rest:
             return "Uso: <code>/pesquisa momentum em crypto</code>"
@@ -290,23 +313,29 @@ def run() -> None:
                     continue
 
                 logger.info("Comando: %s", text[:80])
-                cmd = text.strip().split()[0].split("@")[0].lower()
+                cmd, _, rest = text.strip().partition(" ")
+                cmd = cmd.split("@")[0].lower()
+                rest = rest.strip()
                 if cmd in ("/scorecard", "/score", "/acerto"):
                     send_quant_reply(
                         chat_id,
                         "⏳ Calculando scorecard Kronos (consulta MEXC + catálogo)…",
                     )
+                elif cmd in ("/combo5", "/analise", "/análise", "/c5"):
+                    send_quant_reply(
+                        chat_id,
+                        "⏳ Analisando COMBO5 ao vivo (candles MEXC + Kronos 3TF)…",
+                    )
                 elif cmd in ("/vps", "/hetzner", "/btccursor"):
-                    rest_vps = rest.strip()
-                    if rest_vps.lower() in ("test", "sync", "check") or (
-                        rest_vps and rest_vps.split()[0][0].isdigit()
+                    if rest.lower() in ("test", "sync", "check") or (
+                        rest and rest.split()[0][0].isdigit()
                     ):
                         send_quant_reply(chat_id, "⏳ Hetzner: desligando Kronos duplicado e verificando…")
                 reply = _dispatch(text)
                 if not send_quant_reply(chat_id, reply):
                     send_quant_reply(
                         chat_id,
-                        "⚠️ Falha ao enviar resposta. Tente /scorecard de novo em alguns segundos.",
+                        "⚠️ Falha ao enviar resposta. Tente de novo em alguns segundos.",
                         parse_mode=None,
                     )
 

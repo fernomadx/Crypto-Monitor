@@ -86,6 +86,9 @@ O `kronos_signal.py` já inclui bloco **Contexto QUANT** e veto no scorecard 4H
 ```
 /quant          — estado atual (impacto por BTC/ETH/SOL)
 /pesquisa momentum em crypto após ETF
+/combo5         — análise COMBO5 ao vivo (fora do cron 5 min / horário)
+/analise        — alias de /combo5
+/combo5 BTC     — força o par (ex.: ETH, SOL)
 /btc            — preço LLMQuant + contexto
 /help
 ```

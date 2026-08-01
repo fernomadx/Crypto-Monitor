@@ -41,7 +41,7 @@ try:
         "Online",
         "Bot QUANT ativo no Railway.\n"
         "Comandos: <code>/ping</code> <code>/quant</code> "
-        "<code>/scorecard</code> <code>/vps IP</code> "
+        "<code>/combo5</code> <code>/scorecard</code> <code>/vps IP</code> "
         "<code>/pesquisa sua pergunta</code>\n"
         + (
             f"⚡ Alertas imediatos: <b>ON</b> (notícia forte ≥ {thresh})\n"
@@ -65,7 +65,8 @@ try:
     send_combo5_alert(
         "Online",
         "Bot <b>COMBO5</b> ativo no Railway.\n"
-        "• Análise horária às <code>:10</code> UTC (junto do ciclo Kronos 1H)\n"
+        "• Análise sob demanda: <code>/combo5</code> ou <code>/analise</code>\n"
+        "• Análise horária automática às <code>:10</code> UTC\n"
         "• Avisos <code>ENTRADA Nº N</code> / <code>FECHAMENTO GAIN|LOSS</code>\n"
         "• Gestão de stop/alvo a cada 5 min\n"
         "<i>Paper — não é ordem automática.</i>",
