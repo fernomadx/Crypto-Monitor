@@ -37,11 +37,16 @@ existentes** (Railway, Hetzner, daemons Kronos).
 | Market Structure | Implementado |
 | Dynamic Correlation / Lead-Lag | Implementado (núcleo) |
 | Macro / Cross-Asset | Implementado (fontes públicas + fallback) |
-| Liquidity / Derivatives | Interface + DATA_UNAVAILABLE quando sem dados |
-| News / Events | Interface + coletor RSS público mínimo |
+| Liquidez / Derivativos | OKX pública (funding/OI/basis/liqs) |
+| News / Events | RSS públicos (CoinDesk/CoinTelegraph) |
 | Experience | Similaridade estrutural inicial |
 | Risk | Implementado |
-| Council Aggregator | Implementado (não é média simples) |
+| Council Aggregator | Implementado (não é média simples) + calibração versionada |
+
+Extras v0.2:
+- Walk-forward replay com purge/embargo
+- Dashboard `/dashboard` + alertas `/alerts`
+- Pesos versionados (`candidate` → activate explícito)
 
 ## API
 
