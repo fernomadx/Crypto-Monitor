@@ -37,16 +37,18 @@ existentes** (Railway, Hetzner, daemons Kronos).
 | Market Structure | Implementado |
 | Dynamic Correlation / Lead-Lag | Implementado (núcleo) |
 | Macro / Cross-Asset | Implementado (fontes públicas + fallback) |
-| Liquidez / Derivativos | OKX pública (funding/OI/basis/liqs) |
+| Liquidez / Derivativos | OKX pública + série OI persistida (`oi_change`) |
 | News / Events | RSS públicos (CoinDesk/CoinTelegraph) |
 | Experience | Similaridade estrutural inicial |
 | Risk | Implementado |
 | Council Aggregator | Implementado (não é média simples) + calibração versionada |
 
-Extras v0.2:
+Extras v0.2–v0.3:
 - Walk-forward replay com purge/embargo
-- Dashboard `/dashboard` + alertas `/alerts`
+- Dashboard `/dashboard` + alertas `/alerts` (+ Telegram opcional)
 - Pesos versionados (`candidate` → activate explícito)
+- Avaliação em lote `POST /evaluation/batch` (propõe, não auto-ativa)
+- `GET /derivatives/btc/recent`
 
 ## API
 
@@ -56,6 +58,10 @@ Extras v0.2:
 - `POST /analysis/btc/run`
 - `GET /specialists/status`
 - `GET /decisions`, `GET /decisions/{id}`
+- `GET /alerts`, `POST /alerts/{id}/ack`
+- `GET /weights`, `POST /weights/propose|activate|reject`
+- `POST /evaluation/batch`, `POST /evaluation/decisions/{id}`
+- `GET /derivatives/btc/recent`
 
 ## Status do projeto
 

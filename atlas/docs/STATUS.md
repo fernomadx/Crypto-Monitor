@@ -13,8 +13,10 @@
 
 ## Validação
 
-- `pytest` / `ruff` / `mypy` — ver commit
-- Smoke: segunda coleta com OI anterior → `oi_change` não-nulo; Telegram `disabled` sem token; batch retorna `production_weights_unchanged`
+- `pytest` → **34 passed**
+- `ruff` / `mypy` → OK
+- Smoke: liquidity `AVAILABLE`; 2ª coleta com `previous_oi`/`oi_change`; `/derivatives/btc/recent` e `/evaluation/batch` OK
+- Telegram `disabled` sem token; produção de pesos inalterada pelo batch
 
 ## Limitações
 
