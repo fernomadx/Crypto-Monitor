@@ -210,12 +210,38 @@ def _format_status(
 
 
 def _runtime() -> tuple[Path, TradeJournal, list[str]]:
-    """State dir + journal + tickers configurados."""
+    """State dir + journal + tickers configurados.
+
+    Sempre prefere COMBO5_STATE_DIR (/data/combo5 no Railway). Nunca cair
+    silenciosamente em path efêmero do container — isso fazia o bot 'sumir'
+    após redeploy (heartbeat/journal perdidos).
+    """
     _load_env()
-    state_dir = Path(os.environ.get("COMBO5_STATE_DIR", "/data/combo5"))
-    if not state_dir.exists():
-        state_dir = REPO_ROOT / "vps" / "combo5_state"
-    state_dir.mkdir(parents=True, exist_ok=True)
+    preferred = Path(os.environ.get("COMBO5_STATE_DIR", "/data/combo5"))
+    fallback = REPO_ROOT / "vps" / "combo5_state"
+    state_dir = preferred
+    try:
+        state_dir.mkdir(parents=True, exist_ok=True)
+        # migra estado antigo se ficou no path efêmero
+        if preferred.resolve() != fallback.resolve() and fallback.exists():
+            for name in ("journal.json", "last_heartbeat.txt", "last_ok.txt"):
+                src, dst = fallback / name, preferred / name
+                if src.is_file() and not dst.exists():
+                    try:
+                        dst.write_bytes(src.read_bytes())
+                    except OSError:
+                        pass
+            for stale in fallback.glob("status_*.json"):
+                dst = preferred / stale.name
+                if not dst.exists():
+                    try:
+                        dst.write_bytes(stale.read_bytes())
+                    except OSError:
+                        pass
+    except OSError:
+        logger.warning("COMBO5: não escreveu em %s — usando %s", preferred, fallback)
+        state_dir = fallback
+        state_dir.mkdir(parents=True, exist_ok=True)
     journal = TradeJournal(state_dir / "journal.json")
     return state_dir, journal, resolve_symbols()
 
@@ -266,7 +292,37 @@ def analyze_now(symbol: str | None = None) -> str:
             )
         )
     _mark_heartbeat(state_dir)
+    _mark_ok(state_dir)
     return "\n\n————————\n\n".join(parts)
+
+
+def _mark_ok(state_dir: Path) -> None:
+    (state_dir / "last_ok.txt").write_text(
+        datetime.now(timezone.utc).isoformat(), encoding="utf-8"
+    )
+
+
+def _error_rate_limited(state_dir: Path, key: str, *, cooldown_sec: int = 1800) -> bool:
+    """True se devemos SUPRIMIR o alerta (já avisamos há pouco)."""
+    marker = state_dir / "last_error_alert.txt"
+    now = datetime.now(timezone.utc)
+    payload = f"{now.isoformat()}|{key}"
+    if marker.exists():
+        try:
+            raw = marker.read_text(encoding="utf-8").strip()
+            ts_s, _, prev_key = raw.partition("|")
+            last = datetime.fromisoformat(ts_s)
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+            if prev_key == key and (now - last).total_seconds() < cooldown_sec:
+                return True
+        except Exception:
+            pass
+    try:
+        marker.write_text(payload, encoding="utf-8")
+    except OSError:
+        pass
+    return False
 
 
 def process_symbol(symbol: str, journal: TradeJournal, state_dir: Path) -> dict:
@@ -358,6 +414,7 @@ def main() -> None:
     for symbol in targets:
         try:
             status = process_symbol(symbol, journal, state_dir)
+            _mark_ok(state_dir)
             logger.info(
                 "%s price=%.2f signal=%s ok=%s actions=%s",
                 symbol,
@@ -377,11 +434,14 @@ def main() -> None:
                 _mark_heartbeat(state_dir)
         except Exception as exc:
             logger.exception("COMBO5 falhou em %s: %s", symbol, exc)
-            try:
-                send_combo5_alert(f"erro {symbol}", str(exc)[:400])
-            except Exception:
-                pass
-            raise
+            key = f"{symbol}:{type(exc).__name__}:{str(exc)[:80]}"
+            if not _error_rate_limited(state_dir, key):
+                try:
+                    send_combo5_alert(f"erro {symbol}", str(exc)[:400])
+                except Exception:
+                    pass
+            # Não derruba o cron inteiro com traceback infinito — próximo ciclo tenta de novo
+            continue
 
 
 if __name__ == "__main__":

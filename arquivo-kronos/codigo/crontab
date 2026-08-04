@@ -42,3 +42,5 @@
 */5 * * * * python /app/vps/combo5_signal.py >> /data/combo5.log 2>&1
 # COMBO5: análise horária no Telegram (~junto do Kronos 1H, após :08)
 10 * * * * /bin/sh -c 'COMBO5_FORCE_STATUS=1 python /app/vps/combo5_signal.py' >> /data/combo5.log 2>&1
+# COMBO5: watchdog se ficar >75 min sem ciclo OK
+*/15 * * * * /app/vps/ensure_combo5.sh >> /data/combo5.log 2>&1

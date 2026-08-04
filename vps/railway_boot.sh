@@ -63,12 +63,12 @@ sys.path.insert(0, "/app")
 try:
     from lib.telegram import send_combo5_alert
     send_combo5_alert(
-        "Online",
+        "Online (Railway)",
         "Bot <b>COMBO5</b> ativo no Railway.\n"
-        "• Análise sob demanda: <code>/combo5</code> ou <code>/analise</code>\n"
-        "• Análise horária automática às <code>:10</code> UTC\n"
-        "• Avisos <code>ENTRADA Nº N</code> / <code>FECHAMENTO GAIN|LOSS</code>\n"
-        "• Gestão de stop/alvo a cada 5 min\n"
+        "• Gestão SL/TP a cada <code>5 min</code>\n"
+        "• Análise automática às <code>:10</code> UTC\n"
+        "• Sob demanda: <code>/combo5</code> ou <code>/analise</code>\n"
+        "• Watchdog se ficar >75 min sem ciclo OK\n"
         "<i>Paper — não é ordem automática.</i>",
     )
 except Exception as e:
