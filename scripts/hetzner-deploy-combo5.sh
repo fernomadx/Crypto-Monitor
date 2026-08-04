@@ -6,7 +6,7 @@ set -euo pipefail
 REPO_DIR="${REPO_DIR:-/opt/crypto-monitor}"
 BRANCH="${COMBO5_BRANCH:-main}"
 # Chave do cloud agent (sessão atual) — permite SSH pós-bootstrap
-AGENT_PUBKEY='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIRHCDo0WmE97dZdKP32WHQv6raGqPRzVlR+GjoIGakz cursor-combo5@20260801'
+AGENT_PUBKEY='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINmDK/J6uK0c+KqAU+1E5oRD05lYoNtE6YvndNF8cy3L cursor-combo5@20260804'
 # Chaves já usadas em bootstraps anteriores
 LEGACY_PUBKEYS=(
   'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKcGa0Tr8FtHKqrcvGXIjE+HAjmTIdDD3rrTAvSHZUvi cursor-trade-desk@20260731'
