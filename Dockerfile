@@ -58,12 +58,16 @@ ENV KRONOS_PATH=/app/Kronos \
     QUANT_IMPACT_ALERTS=true \
     QUANT_MAX_AGE_HOURS=4 \
     QUANT_POLL_MINUTES=5 \
-    QUANT_DISPLAY_TZ=Europe/Dublin
+    QUANT_DISPLAY_TZ=Europe/Dublin \
+    COMBO5_ENABLED=true \
+    COMBO5_STATE_DIR=/data/combo5 \
+    COMBO5_TICKERS=BTC \
+    COMBO5_HEARTBEAT_MINUTES=60
 
 RUN mkdir -p /data /data/combo5 /data/kronos/charts /data/huggingface \
     && chmod +x /app/vps/railway_boot.sh /app/vps/kronos_run.sh /app/vps/kronos_candle_cron.sh \
     /app/vps/kronos_backup_cron.sh /app/vps/kronos_daemon.py /app/vps/ensure_kronos_daemon.sh \
-    /app/vps/ensure_quant_bot.sh /app/vps/combo5_signal.py \
+    /app/vps/ensure_quant_bot.sh /app/vps/ensure_combo5.sh /app/vps/combo5_signal.py \
     /app/vps/quant_bot.py /app/vps/quant_watcher.py /app/vps/quant_hourly_news.py 2>/dev/null || true
 
 # supercronic + boot Kronos (1ª execução após deploy)

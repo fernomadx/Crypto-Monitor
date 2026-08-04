@@ -39,6 +39,7 @@ copy vps/quant_watcher.py
 copy vps/quant_bot.py
 copy vps/quant_test.py
 copy vps/combo5_signal.py
+copy vps/ensure_combo5.sh
 copy vps/start_quant.sh
 copy vps/install_quant_crontab.sh
 copy vps/QUANT.md
