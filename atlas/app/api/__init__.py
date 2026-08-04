@@ -7,13 +7,16 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import __version__
+from app.api.dashboard import DASHBOARD_HTML
 from app.collectors.btc import BtcMarketCollector
 from app.collectors.providers.fallback import FallbackMarketProvider
 from app.config import get_settings
 from app.core.exceptions import DataUnavailableError
+from app.council.calibration import WeightCalibrator
 from app.database import get_session
 from app.schemas import (
     AnalysisRunResponse,
@@ -22,6 +25,7 @@ from app.schemas import (
     HealthResponse,
     MarketSnapshot,
 )
+from app.services.alerts import DecisionAlertService
 from app.services.analysis import AnalysisService
 
 router = APIRouter()
@@ -166,3 +170,116 @@ async def get_decision(
     if row is None:
         raise HTTPException(status_code=404, detail="decision not found")
     return row
+
+
+@router.get("/", response_class=HTMLResponse)
+@router.get("/dashboard", response_class=HTMLResponse)
+async def dashboard() -> HTMLResponse:
+    return HTMLResponse(DASHBOARD_HTML)
+
+
+@router.get("/alerts")
+async def list_alerts(
+    limit: int = 50,
+    session: AsyncSession = Depends(get_session),
+) -> list[dict[str, Any]]:
+    return await DecisionAlertService(session).list_alerts(limit=min(limit, 200))
+
+
+@router.post("/alerts/{alert_id}/ack")
+async def ack_alert(
+    alert_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, str]:
+    ok = await DecisionAlertService(session).acknowledge(alert_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="alert not found")
+    return {"status": "acknowledged"}
+
+
+@router.get("/weights")
+async def list_weights(session: AsyncSession = Depends(get_session)) -> list[dict[str, Any]]:
+    return await WeightCalibrator(session).list_versions()
+
+
+@router.post("/weights/propose")
+async def propose_weights(
+    min_evaluations: int = 20,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    return await WeightCalibrator(session).propose(min_evaluations=min_evaluations)
+
+
+@router.post("/weights/{version_id}/activate")
+async def activate_weights(
+    version_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    result = await WeightCalibrator(session).activate(version_id)
+    if result.get("status") == "not_found":
+        raise HTTPException(status_code=404, detail="version not found")
+    return result
+
+
+@router.post("/weights/{version_id}/reject")
+async def reject_weights(
+    version_id: UUID,
+    reason: str = "",
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    result = await WeightCalibrator(session).reject(version_id, reason=reason)
+    if result.get("status") == "not_found":
+        raise HTTPException(status_code=404, detail="version not found")
+    return result
+
+
+@router.post("/replay/walkforward/demo")
+async def walkforward_demo() -> dict[str, Any]:
+    """Deterministic demo of purged walk-forward without look-ahead."""
+    from datetime import timedelta
+
+    from app.replay import VirtualClock, WalkForwardConfig, WalkForwardReplay
+
+    start = datetime(2024, 1, 1, tzinfo=UTC)
+    rows = []
+    for i in range(200):
+        ts = start + timedelta(days=i)
+        rows.append({"event_time": ts.isoformat(), "close": 40000 + i * 10, "i": i})
+
+    def decision_fn(train, visible, clock: VirtualClock):
+        # Only uses revealed data
+        last = visible[-1]["close"] if visible else (train[-1]["close"] if train else 0)
+        prior = visible[-2]["close"] if len(visible) > 1 else last
+        bias = "LONG" if last >= prior else "SHORT"
+        return {"decision": bias, "asof": clock.now.isoformat(), "n_visible": len(visible)}
+
+    wf = WalkForwardReplay(
+        WalkForwardConfig(
+            train_size=timedelta(days=60),
+            test_size=timedelta(days=10),
+            step_size=timedelta(days=20),
+            embargo=timedelta(days=2),
+            purge=timedelta(days=1),
+        )
+    )
+    result = wf.run(
+        rows,
+        start=start,
+        end=start + timedelta(days=180),
+        decision_fn=decision_fn,
+        step=timedelta(days=2),
+    )
+    return {
+        "n_folds": len(result.splits),
+        "notes": result.notes,
+        "folds": [
+            {
+                "fold": f["fold"],
+                "embargo": f["embargo"],
+                "n_train": f["n_train"],
+                "n_decisions": f["n_decisions"],
+                "first_decision": f["decisions"][0] if f["decisions"] else None,
+            }
+            for f in result.fold_results
+        ],
+    }

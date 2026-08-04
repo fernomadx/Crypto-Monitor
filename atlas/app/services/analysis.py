@@ -9,14 +9,17 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.collectors.btc import BtcMarketCollector
+from app.collectors.providers.okx_derivatives import OkxDerivativesProvider
 from app.collectors.providers.stooq import StooqProvider
 from app.collectors.providers.yahoo import YahooMacroProvider
 from app.config import Settings, get_settings
 from app.core.logging import get_logger
 from app.council import CouncilAggregator
+from app.council.calibration import WeightCalibrator
 from app.models import CouncilDecisionRecord, SpecialistAssessmentRecord
 from app.reports import build_report_json, build_report_markdown
 from app.schemas import AnalysisRunResponse, CouncilDecision, DecisionSummary, MarketSnapshot
+from app.services.alerts import DecisionAlertService
 from app.specialists import (
     DynamicCorrelationSpecialist,
     ExperienceSpecialist,
@@ -38,6 +41,8 @@ class AnalysisService:
         self.settings = settings or get_settings()
         self.collector = BtcMarketCollector(session, settings=self.settings)
         self.council = CouncilAggregator()
+        self.calibrator = WeightCalibrator(session)
+        self.alerts = DecisionAlertService(session)
         self.specialists = [
             MarketStructureSpecialist(),
             DynamicCorrelationSpecialist(),
@@ -67,25 +72,28 @@ class AnalysisService:
                 logger.error("specialist_failed", specialist=specialist.name, error=str(exc))
                 assessment = specialist.unavailable(snapshot.symbol, "1h", str(exc))
             assessments.append(assessment)
-            # enrich context for downstream specialists
-            name = assessment.specialist.value if hasattr(assessment.specialist, "value") else str(assessment.specialist)
+            name = (
+                assessment.specialist.value
+                if hasattr(assessment.specialist, "value")
+                else str(assessment.specialist)
+            )
             if name == "dynamic_correlation":
                 context["correlation_metrics"] = to_jsonable(assessment.metrics)
 
-        # Refresh macro with correlation context
         for i, specialist in enumerate(self.specialists):
             if isinstance(specialist, MacroCrossAssetSpecialist):
                 assessments[i] = await specialist.analyze(snapshot, context)
                 break
 
-        # Sanitize metrics for JSON persistence
         for assessment in assessments:
             assessment.metrics = to_jsonable(assessment.metrics)
 
+        weights = await self.calibrator.get_active_weights()
         decision = self.council.aggregate(
             assessments,
             symbol=snapshot.symbol,
             price=snapshot.price,
+            historical_weights=weights,
         )
         report_md = build_report_markdown(decision)
         report_json = build_report_json(decision)
@@ -125,6 +133,15 @@ class AnalysisService:
                     await close()
         context["macro_series"] = macro
         context["macro_source_count"] = len(macro)
+
+        deriv = OkxDerivativesProvider(self.settings)
+        try:
+            context["derivatives"] = await deriv.fetch_snapshot(snapshot.symbol)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("derivatives_unavailable", error=str(exc))
+            context["derivatives"] = None
+        finally:
+            await deriv.aclose()
         return context
 
     async def _persist(
@@ -163,6 +180,7 @@ class AnalysisService:
                 )
             )
         await self.session.commit()
+        await self.alerts.check_and_emit(record)
         return record.id
 
     async def latest_decision(self) -> AnalysisRunResponse | None:

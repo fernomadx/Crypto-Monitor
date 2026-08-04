@@ -46,6 +46,7 @@ API em `http://localhost:8080`.
 
 | Método | Path | Descrição |
 |--------|------|-----------|
+| GET | `/` ou `/dashboard` | Dashboard mínimo |
 | GET | `/health` | Saúde app/DB/coletores |
 | GET | `/ready` | Readiness (DB) |
 | GET | `/version` | Versão |
@@ -55,6 +56,13 @@ API em `http://localhost:8080`.
 | GET | `/specialists/status` | Status dos especialistas |
 | GET | `/decisions` | Lista decisões |
 | GET | `/decisions/{id}` | Decisão por id |
+| GET | `/alerts` | Alertas de mudança |
+| POST | `/alerts/{id}/ack` | Confirma alerta |
+| GET | `/weights` | Versões de pesos |
+| POST | `/weights/propose` | Propõe calibração (não ativa) |
+| POST | `/weights/{id}/activate` | Ativa versão explicitamente |
+| POST | `/weights/{id}/reject` | Rejeita versão |
+| POST | `/replay/walkforward/demo` | Demo walk-forward purged |
 
 ## Testes e qualidade
 

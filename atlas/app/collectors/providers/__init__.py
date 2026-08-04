@@ -7,6 +7,7 @@ from app.collectors.providers.coinbase import CoinbasePublicProvider
 from app.collectors.providers.fallback import FallbackMarketProvider
 from app.collectors.providers.fred import FredProvider
 from app.collectors.providers.okx import OkxPublicProvider
+from app.collectors.providers.okx_derivatives import OkxDerivativesProvider
 from app.collectors.providers.stooq import StooqProvider
 from app.collectors.providers.yahoo import YahooMacroProvider
 
@@ -17,6 +18,7 @@ __all__ = [
     "BybitPublicProvider",
     "CoinbasePublicProvider",
     "OkxPublicProvider",
+    "OkxDerivativesProvider",
     "FallbackMarketProvider",
     "StooqProvider",
     "FredProvider",

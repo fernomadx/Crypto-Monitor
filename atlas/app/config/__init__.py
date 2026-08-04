@@ -19,7 +19,7 @@ class Settings(BaseSettings):
 
     env: Literal["development", "test", "production"] = "development"
     app_name: str = "ATLAS"
-    version: str = "0.1.0"
+    version: str = "0.2.0"
     debug: bool = False
     host: str = "0.0.0.0"
     port: int = 8080

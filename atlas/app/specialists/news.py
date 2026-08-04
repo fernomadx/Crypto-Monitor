@@ -43,10 +43,10 @@ class NewsEventsSpecialist(BaseSpecialist):
 
     async def _fetch_feed(self, url: str) -> str:
         if self._client is not None:
-            response = await self._client.get(url)
+            response = await self._client.get(url, follow_redirects=True)
             response.raise_for_status()
             return response.text
-        async with httpx.AsyncClient(timeout=20.0) as client:
+        async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
             response = await client.get(url)
             response.raise_for_status()
             return response.text
