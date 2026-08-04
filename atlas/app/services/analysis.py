@@ -9,7 +9,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.collectors.btc import BtcMarketCollector
-from app.collectors.providers.okx_derivatives import OkxDerivativesProvider
 from app.collectors.providers.stooq import StooqProvider
 from app.collectors.providers.yahoo import YahooMacroProvider
 from app.config import Settings, get_settings
@@ -20,6 +19,7 @@ from app.models import CouncilDecisionRecord, SpecialistAssessmentRecord
 from app.reports import build_report_json, build_report_markdown
 from app.schemas import AnalysisRunResponse, CouncilDecision, DecisionSummary, MarketSnapshot
 from app.services.alerts import DecisionAlertService
+from app.services.derivatives import DerivativesService
 from app.specialists import (
     DynamicCorrelationSpecialist,
     ExperienceSpecialist,
@@ -134,14 +134,8 @@ class AnalysisService:
         context["macro_series"] = macro
         context["macro_source_count"] = len(macro)
 
-        deriv = OkxDerivativesProvider(self.settings)
-        try:
-            context["derivatives"] = await deriv.fetch_snapshot(snapshot.symbol)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("derivatives_unavailable", error=str(exc))
-            context["derivatives"] = None
-        finally:
-            await deriv.aclose()
+        deriv_service = DerivativesService(self.session, self.settings)
+        context["derivatives"] = await deriv_service.collect_and_enrich(snapshot.symbol)
         return context
 
     async def _persist(

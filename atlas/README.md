@@ -62,6 +62,9 @@ API em `http://localhost:8080`.
 | POST | `/weights/propose` | Propõe calibração (não ativa) |
 | POST | `/weights/{id}/activate` | Ativa versão explicitamente |
 | POST | `/weights/{id}/reject` | Rejeita versão |
+| POST | `/evaluation/batch` | Avalia decisões vencidas (+ proposta opcional) |
+| POST | `/evaluation/decisions/{id}` | Avalia uma decisão |
+| GET | `/derivatives/btc/recent` | Série recente de funding/OI |
 | POST | `/replay/walkforward/demo` | Demo walk-forward purged |
 
 ## Testes e qualidade
@@ -76,8 +79,11 @@ docker compose config
 
 ## Variáveis de ambiente
 
-Ver `.env.example`. Opcional: `ATLAS_FRED_API_KEY` para séries FRED.
-Stooq é usado por padrão para macro/cross-asset (sem chave).
+Ver `.env.example`. Opcionais:
+- `ATLAS_FRED_API_KEY` — séries FRED
+- `ATLAS_TELEGRAM_BOT_TOKEN` / `ATLAS_TELEGRAM_CHAT_ID` — alertas Telegram (vazio = desabilitado)
+
+Stooq é usado por padrão para macro/cross-asset (sem chave); Yahoo Chart API é fallback.
 
 ## Status e limitações
 

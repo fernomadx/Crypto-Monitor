@@ -175,3 +175,26 @@ class AlertRecord(Base):
     decision_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     acknowledged: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class DerivativeObservation(Base):
+    """Time series of derivatives snapshots for oi_change and regime tracking."""
+
+    __tablename__ = "derivative_observations"
+    __table_args__ = (
+        Index("ix_deriv_obs_symbol_time", "symbol", "observed_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False)
+    source: Mapped[str] = mapped_column(String(64), nullable=False)
+    instrument: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    funding: Mapped[float | None] = mapped_column(Float, nullable=True)
+    open_interest: Mapped[float | None] = mapped_column(Float, nullable=True)
+    open_interest_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    mark_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    index_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    basis_bps: Mapped[float | None] = mapped_column(Float, nullable=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

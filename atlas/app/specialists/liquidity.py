@@ -11,7 +11,7 @@ from app.specialists.base import BaseSpecialist
 
 class LiquidityDerivativesSpecialist(BaseSpecialist):
     name = SpecialistName.LIQUIDITY_DERIVATIVES
-    model_version = "0.2.0"
+    model_version = "0.3.0"
 
     async def analyze(
         self,
@@ -105,7 +105,26 @@ class LiquidityDerivativesSpecialist(BaseSpecialist):
             c1 = snapshot.timeframes["1h"][-1].close
             price_up = c1 > c0
 
+        oi_change_pct = derivatives.get("oi_change_pct")
+        oi_window = derivatives.get("oi_change_window_sec")
         if oi_change is not None:
+            pct_txt = (
+                f" ({oi_change_pct * 100:.2f}%)"
+                if isinstance(oi_change_pct, (int, float))
+                else ""
+            )
+            window_txt = (
+                f" em {oi_window / 3600:.1f}h"
+                if isinstance(oi_window, (int, float)) and oi_window > 0
+                else ""
+            )
+            evidence.append(
+                self.evidence(
+                    f"ΔOI={oi_change:.2f}{pct_txt}{window_txt} vs observação anterior",
+                    weight=0.55,
+                    source="derivatives",
+                )
+            )
             if price_up and oi_change > 0:
                 score += 0.15
                 evidence.append(

@@ -1,4 +1,4 @@
-"""Decision-change alerts (in-process queue; Telegram optional later)."""
+"""Decision-change alerts with optional Telegram delivery."""
 
 from __future__ import annotations
 
@@ -9,15 +9,19 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import Settings, get_settings
 from app.core.logging import get_logger
 from app.models import AlertRecord, CouncilDecisionRecord
+from app.services.telegram import TelegramNotifier
 
 logger = get_logger(__name__)
 
 
 class DecisionAlertService:
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession, settings: Settings | None = None):
         self.session = session
+        self.settings = settings or get_settings()
+        self.telegram = TelegramNotifier(self.settings)
 
     async def check_and_emit(self, new_decision: CouncilDecisionRecord) -> AlertRecord | None:
         result = await self.session.execute(
@@ -33,7 +37,6 @@ class DecisionAlertService:
         if previous is None:
             return None
         if previous.decision == new_decision.decision:
-            # Also alert on large confidence swings with same side
             if abs(previous.confidence - new_decision.confidence) < 0.25:
                 return None
             kind = "confidence_shift"
@@ -46,6 +49,15 @@ class DecisionAlertService:
             message = (
                 f"Decisão {previous.decision} → {new_decision.decision} "
                 f"(conf {new_decision.confidence:.2f})"
+            )
+
+        telegram_status: dict[str, Any] = {"status": "skipped"}
+        if self.settings.telegram_alerts_enabled:
+            telegram_status = await self.telegram.send_alert(
+                kind=kind,
+                message=message,
+                symbol=new_decision.symbol,
+                price=new_decision.price,
             )
 
         alert = AlertRecord(
@@ -61,12 +73,13 @@ class DecisionAlertService:
                 "new_confidence": new_decision.confidence,
                 "price": new_decision.price,
                 "created_at": datetime.now(UTC).isoformat(),
+                "telegram": telegram_status,
             },
             decision_id=new_decision.id,
         )
         self.session.add(alert)
         await self.session.commit()
-        logger.info("alert_emitted", kind=kind, message=message)
+        logger.info("alert_emitted", kind=kind, message=message, telegram=telegram_status.get("status"))
         return alert
 
     async def list_alerts(self, limit: int = 50) -> list[dict[str, Any]]:

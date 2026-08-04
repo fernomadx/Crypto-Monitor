@@ -18,6 +18,7 @@ from app.config import get_settings
 from app.core.exceptions import DataUnavailableError
 from app.council.calibration import WeightCalibrator
 from app.database import get_session
+from app.evaluation import BatchEvaluationService, DecisionEvaluator
 from app.schemas import (
     AnalysisRunResponse,
     DecisionSummary,
@@ -27,6 +28,7 @@ from app.schemas import (
 )
 from app.services.alerts import DecisionAlertService
 from app.services.analysis import AnalysisService
+from app.services.derivatives import DerivativesService
 
 router = APIRouter()
 
@@ -231,6 +233,52 @@ async def reject_weights(
     if result.get("status") == "not_found":
         raise HTTPException(status_code=404, detail="version not found")
     return result
+
+
+@router.post("/evaluation/batch")
+async def evaluation_batch(
+    limit: int = 50,
+    min_age_hours: float | None = None,
+    auto_propose: bool | None = None,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Evaluate due decisions; may propose weights, never auto-activates production."""
+    from datetime import timedelta
+
+    settings = get_settings()
+    min_age = (
+        timedelta(hours=min_age_hours)
+        if min_age_hours is not None
+        else timedelta(hours=settings.eval_min_age_hours)
+    )
+    return await BatchEvaluationService(session, settings).run(
+        limit=min(limit, 200),
+        min_age=min_age,
+        auto_propose=auto_propose if auto_propose is not None else settings.eval_auto_propose,
+    )
+
+
+@router.post("/evaluation/decisions/{decision_id}")
+async def evaluation_decision(
+    decision_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        return await DecisionEvaluator(session).evaluate_decision(decision_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/derivatives/btc/recent")
+async def derivatives_recent(
+    limit: int = 50,
+    session: AsyncSession = Depends(get_session),
+) -> list[dict[str, Any]]:
+    settings = get_settings()
+    return await DerivativesService(session, settings).recent(
+        settings.btc_symbol,
+        limit=min(limit, 200),
+    )
 
 
 @router.post("/replay/walkforward/demo")

@@ -19,7 +19,7 @@ class Settings(BaseSettings):
 
     env: Literal["development", "test", "production"] = "development"
     app_name: str = "ATLAS"
-    version: str = "0.2.0"
+    version: str = "0.3.0"
     debug: bool = False
     host: str = "0.0.0.0"
     port: int = 8080
@@ -34,6 +34,16 @@ class Settings(BaseSettings):
 
     fred_api_key: str = ""
     stooq_enabled: bool = True
+
+    # Optional Telegram alerts (never required; no withdraw/exchange keys)
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+    telegram_alerts_enabled: bool = True
+
+    # Batch evaluation
+    eval_min_age_hours: float = 1.0
+    eval_auto_propose: bool = True
+    eval_min_for_propose: int = 20
 
     max_data_lag_sec: int = 900
     min_candles: int = 50
