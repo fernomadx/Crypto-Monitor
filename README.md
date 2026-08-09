@@ -160,6 +160,13 @@ sudo bash vps/install.sh
 
 [`vps/README.md`](vps/README.md) · DB próprio na VPS (`kronos_vps.db`)
 
+## AI Trader OS (workflow manual, Claude Code)
+
+Camada de análise/journal manual em cima dos agentes acima — scan → technical →
+news → score → plan → size → journal → review, com o Claude como analista e você
+como quem decide e executa (paper-first, nunca ordem automática). Ver
+[`trader-os/CLAUDE.md`](trader-os/CLAUDE.md).
+
 ## Arquivo do projeto (consulta rápida)
 
 Tudo documentado em **[`arquivo-kronos/`](arquivo-kronos/README.md)** — índice, Railway, Hetzner, scorecard, comandos e decisões.
