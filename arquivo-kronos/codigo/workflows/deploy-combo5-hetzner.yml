@@ -16,6 +16,7 @@ on:
       - vps/quant_bot.py
       - lib/combo5/**
       - scripts/hetzner-deploy-combo5.sh
+      - scripts/hetzner-heal-bots.sh
       - vps/hetzner_bootstrap_combo5.sh
       - .github/workflows/deploy-combo5-hetzner.yml
 

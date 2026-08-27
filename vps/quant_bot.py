@@ -41,6 +41,15 @@ POLL_SEC = int(os.environ.get("QUANT_BOT_POLL_SEC", "2"))
 _singleton_fp = None
 
 
+def _enabled() -> bool:
+    return os.environ.get("QUANT_BOT_ENABLED", "1").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
+
+
 def _bot_token() -> str:
     return os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 
@@ -49,13 +58,18 @@ def _allowed_chat() -> str:
     return os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 
 
+class TelegramConflict(RuntimeError):
+    """Telegram 409 — outro getUpdates (Railway vs Hetzner) no mesmo token."""
+
+
 def _api(method: str, **kwargs) -> dict:
     token = _bot_token()
     resp = requests.post(f"https://api.telegram.org/bot{token}/{method}", json=kwargs, timeout=30)
     if resp.status_code == 409:
-        raise RuntimeError(
+        raise TelegramConflict(
             "Telegram 409: outro processo usa getUpdates neste bot "
-            "(webhook ou segunda instância). Pare duplicatas."
+            "(webhook ou segunda instância Hetzner/Railway). "
+            "Na VPS: QUANT_BOT_ENABLED=0 e mate quant_bot.py."
         )
     resp.raise_for_status()
     return resp.json()
@@ -290,6 +304,10 @@ def _dispatch(text: str) -> str:
 
 
 def run() -> None:
+    if not _enabled():
+        logger.info("QUANT_BOT_ENABLED=0 — polling desligado (comandos ficam no Railway)")
+        return
+
     if not _bot_token() or not _allowed_chat():
         raise RuntimeError("TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID obrigatórios")
 
@@ -299,10 +317,12 @@ def run() -> None:
     logger.info("QUANT bot ativo (chat %s)", _allowed_chat())
     _ensure_polling()
     offset = _load_offset()
+    conflict_sleep = 15
 
     while True:
         try:
             data = _api("getUpdates", offset=offset, timeout=30, allowed_updates=["message"])
+            conflict_sleep = 15
             for upd in data.get("result", []):
                 offset = upd["update_id"] + 1
                 msg = upd.get("message") or {}
@@ -340,6 +360,11 @@ def run() -> None:
                     )
 
             _save_offset(offset)
+        except TelegramConflict as exc:
+            logger.warning("%s — backoff %ss", exc, conflict_sleep)
+            time.sleep(conflict_sleep)
+            conflict_sleep = min(conflict_sleep * 2, 120)
+            continue
         except Exception as exc:
             logger.exception("quant_bot loop: %s", exc)
             time.sleep(5)

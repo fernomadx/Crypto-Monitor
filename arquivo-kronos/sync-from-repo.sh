@@ -60,6 +60,10 @@ copy vps/hetzner_bootstrap_combo5.sh
 copy vps/README.md
 copy vps/crontab.example
 copy scripts/hetzner-deploy-combo5.sh
+copy scripts/hetzner-heal-bots.sh
+copy scripts/hetzner-console-onboard.sh
+copy vps/hetzner_test.sh
+copy vps/ensure_quant_bot.sh
 copy Dockerfile
 copy Dockerfile.kronos
 copy crontab

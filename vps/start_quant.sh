@@ -41,8 +41,11 @@ echo "==> 1/4 Teste QUANT"
 echo "==> 2/4 Bot on-demand"
 _tok="${TELEGRAM_BOT_TOKEN:-}"
 _chat="${TELEGRAM_CHAT_ID:-}"
+_bot_on="${QUANT_BOT_ENABLED:-1}"
 if [ -z "$_tok" ] || [ -z "$_chat" ] || [[ "$_tok" == *your_* ]] || [[ "$_chat" == *your_* ]]; then
   echo "     SKIP bot — configure TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID em vps/.env"
+elif [ "$_bot_on" = "0" ] || [ "$_bot_on" = "false" ] || [ "$_bot_on" = "off" ]; then
+  echo "     SKIP bot — QUANT_BOT_ENABLED=0 (comandos no Railway; evita Telegram 409)"
 else
   if ps -ef 2>/dev/null | grep -v grep | grep -q '[q]uant_bot.py'; then
     echo "     quant_bot já rodando"

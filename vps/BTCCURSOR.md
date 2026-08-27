@@ -114,13 +114,16 @@ Actions → **Deploy Kronos to VPS** → **Run workflow**
 | DB | `/data/crypto_monitor.db` | `/opt/crypto-monitor/data/kronos_vps.db` |
 | Cron | no container | COMBO5 5 min + `:10`; sem linhas `kronos_*` |
 
-### COMBO5 + comando `/combo5`
+### COMBO5 na Hetzner (alertas) + comandos no Railway
+
+A VPS envia `[COMBO5]` (cron 5 min + `:10` UTC). **Não** rode `quant_bot` aqui: o mesmo `TELEGRAM_BOT_TOKEN` no Railway já faz `getUpdates`. Dois pollers geram **Telegram 409** e `/ping` `/combo5` param.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/scripts/hetzner-deploy-combo5.sh | sudo bash
+# Reativar COMBO5 + matar quant_bot duplicado
+curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/scripts/hetzner-heal-bots.sh | sudo bash
 ```
 
-Telegram: `/combo5` · `/analise` · `/c5` (ou `/combo5 BTC`).
+Telegram: `/combo5` · `/analise` · `/c5` (respondidos pelo Railway). Alertas `[COMBO5]` saem da Hetzner.
 
 Desligar Kronos na Hetzner:
 
