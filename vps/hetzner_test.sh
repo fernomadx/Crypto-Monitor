@@ -87,7 +87,9 @@ import requests
 spot = fetch_klines("BTCUSDT", "1h", 2)
 print(f"MEXC spot: OK close={float(spot['close'].iloc[-1]):,.2f}")
 fut = fetch_contract_klines("BTCUSDT", "1h", 2)
-print(f"MEXC futures: OK close={float(fut['close'].iloc[-1]):,.2f}")
+print(f"MEXC futures 1h: OK close={float(fut['close'].iloc[-1]):,.2f}")
+fut4 = fetch_contract_klines("BTCUSDT", "4h", 2)
+print(f"MEXC futures 4h: OK close={float(fut4['close'].iloc[-1]):,.2f}")
 
 tok = os.environ.get("KRONOS_TELEGRAM_BOT_TOKEN") or os.environ.get("TELEGRAM_BOT_TOKEN", "")
 if tok:

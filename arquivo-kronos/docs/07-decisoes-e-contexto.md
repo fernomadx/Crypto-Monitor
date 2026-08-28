@@ -1,5 +1,6 @@
 # Decisões e contexto (linha do tempo)
 
+- **MEXC Análise in-repo (2026-08)** — `/mexc` no QUANT bot + `vps/mexc_analise.py` substituem o CCXT `📊 MEXC Análise` (RequestTimeout). Futures 4h usa `Hour4` (`Min240` = code 600). Spot + funding + basis no mesmo relatório.
 - **COMBO5 Railway state path (2026-08)** — bug: se `/data/combo5` não existia no volume, o bot caía em path efêmero e “parava” após redeploy. Fix: sempre cria `/data/combo5` + watchdog `ensure_combo5.sh` + rate-limit de erros.
 - **COMBO5 na Hetzner (2026-08)** — análise + `/combo5` rodam na VPS (`scripts/hetzner-deploy-combo5.sh`); cron 5 min + `:10` UTC; `quant_bot` com watchdog local.
 - **COMBO5 sob demanda (2026-08)** — comandos Telegram `/combo5` · `/analise` · `/c5` no `quant_bot` disparam o mesmo ciclo de análise (candles MEXC + 3TF + desk) fora do cron de 5 min / horário; opcional `/combo5 BTC`.

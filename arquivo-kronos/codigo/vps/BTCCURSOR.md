@@ -120,7 +120,7 @@ Actions → **Deploy Kronos to VPS** → **Run workflow**
 curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/scripts/hetzner-deploy-combo5.sh | sudo bash
 ```
 
-Telegram: `/combo5` · `/analise` · `/c5` (ou `/combo5 BTC`).
+Telegram: `/combo5` · `/analise` · `/c5` (ou `/combo5 BTC`). MEXC: `/mexc` · `/mexc BTC`.
 
 Desligar Kronos na Hetzner:
 
@@ -162,9 +162,24 @@ mkdir -p /opt/crypto-monitor/data/huggingface
 
 ---
 
-## 7. Erro `RequestTimeout` — MEXC Análise (futures)
+## 7. `📊 MEXC Análise` (spot + futuros, sem CCXT)
 
-Se o bot **BTCCURSOR** mostrar:
+No Telegram QUANT: `/mexc` ou `/mexc BTC`.
+
+CLI / VPS:
+
+```bash
+cd /opt/crypto-monitor && git pull
+set -a && source vps/.env && set +a
+vps/.venv/bin/python vps/mexc_analise.py BTC
+# envia ao chat:
+vps/.venv/bin/python vps/mexc_analise.py --telegram
+```
+
+Usa `lib/mexc_http.py` (timeout 45s + 4 retries) e `lib/mexc_contract.py`.
+Klines 4h de futuros são **`Hour4`** — `Min240` devolve `code=600 Parameter error`.
+
+Se o bot **CCXT/Node antigo** ainda mostrar:
 
 ```
 📊 MEXC Análise
@@ -172,30 +187,7 @@ Erro
 RequestTimeout: mexc GET .../api/v1/contract/kline/BTC_USDT?interval=Min60
 ```
 
-Isso é a API de **futuros** MEXC (CCXT ou script separado), não o Kronos spot.
-
-**Causa:** timeout curto ou pico de latência MEXC (intermitente).
-
-**Correções no script CCXT/Node (se usar):**
-
-```javascript
-const exchange = new ccxt.mexc({
-  timeout: 45000,
-  enableRateLimit: true,
-});
-// retry manual 3–4x com sleep 2s entre tentativas
-```
-
-**Alternativa Python (neste repo):** `lib/mexc_contract.py` — retry + fallback `contract.mexc.com`:
-
-```bash
-cd /opt/crypto-monitor && git pull
-set -a && source vps/.env && set +a
-vps/.venv/bin/python -c "
-from lib.mexc_contract import fetch_contract_klines
-print(fetch_contract_klines('BTCUSDT','1h',50).tail(2))
-"
-```
+desligue esse script e use `/mexc` (este repo). Timeout curto no CCXT era a causa; o cliente Python já faz retry.
 
 Variáveis opcionais no `.env`:
 
@@ -203,9 +195,10 @@ Variáveis opcionais no `.env`:
 MEXC_HTTP_TIMEOUT_SEC=45
 MEXC_HTTP_RETRIES=4
 MEXC_CONTRACT_BASE=https://contract.mexc.com
+MEXC_ANALISE_TICKERS=BTC,ETH,SOL
 ```
 
-O **Kronos** usa spot (`/api/v3/klines`) — também ganha retry após `git pull` (`lib/mexc_http.py`).
+O **Kronos** usa spot (`/api/v3/klines`) — o mesmo retry (`lib/mexc_http.py`).
 
 ---
 

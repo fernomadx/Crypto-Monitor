@@ -49,14 +49,20 @@ def get_session() -> requests.Session:
     return _session
 
 
-def mexc_get(url: str, *, params: dict | None = None, timeout: float | None = None) -> requests.Response:
+def mexc_get(
+    url: str,
+    *,
+    params: dict | None = None,
+    timeout: float | None = None,
+    headers: dict | None = None,
+) -> requests.Response:
     """GET com retry; levanta último erro após esgotar tentativas."""
     session = get_session()
     t = timeout if timeout is not None else TIMEOUT
     last_exc: Exception | None = None
     for attempt in range(1, RETRIES + 1):
         try:
-            resp = session.get(url, params=params or {}, timeout=t)
+            resp = session.get(url, params=params or {}, timeout=t, headers=headers)
             resp.raise_for_status()
             return resp
         except (requests.Timeout, requests.ConnectionError) as exc:

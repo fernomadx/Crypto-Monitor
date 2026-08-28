@@ -14,6 +14,8 @@ Segurança: MEXC_API_KEY e MEXC_API_SECRET nunca entram no código.
            Sempre lidos de variáveis de ambiente.
 """
 
+from pathlib import Path
+
 import hashlib
 import hmac
 import logging
@@ -21,18 +23,19 @@ import os
 import sys
 import time
 
+_REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_REPO))
 sys.path.insert(0, "/app")
 
-import requests
-
 from lib import db, telegram
+from lib.mexc_http import MEXC_SPOT_BASE, mexc_get
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
 MEXC_API_KEY = os.environ.get("MEXC_API_KEY", "")
 MEXC_API_SECRET = os.environ.get("MEXC_API_SECRET", "")
-MEXC_BASE = "https://api.mexc.com"
+MEXC_BASE = MEXC_SPOT_BASE
 
 # Ativos a exibir no alerta (ignora saldos < threshold em USDT)
 MIN_USD_VALUE = 1.0
@@ -57,12 +60,10 @@ def _headers() -> dict:
 def fetch_btc_price() -> float | None:
     """Endpoint público — não requer autenticação."""
     try:
-        resp = requests.get(
+        resp = mexc_get(
             f"{MEXC_BASE}/api/v3/ticker/price",
             params={"symbol": "BTCUSDT"},
-            timeout=10,
         )
-        resp.raise_for_status()
         price = float(resp.json()["price"])
         db.insert_price("mexc", "BTC", price)
         logger.info("MEXC BTC price: $%.2f", price)
@@ -83,16 +84,14 @@ def fetch_account_balance() -> None:
 
     try:
         ts = int(time.time() * 1000)
-        params = {"timestamp": ts}
+        params = {"recvWindow": 10000, "timestamp": ts}
         params["signature"] = _sign(params)
 
-        resp = requests.get(
+        resp = mexc_get(
             f"{MEXC_BASE}/api/v3/account",
             params=params,
             headers=_headers(),
-            timeout=10,
         )
-        resp.raise_for_status()
         data = resp.json()
 
         balances = [
@@ -116,13 +115,11 @@ def fetch_account_balance() -> None:
                 usd_value = total
             else:
                 try:
-                    r = requests.get(
+                    r = mexc_get(
                         f"{MEXC_BASE}/api/v3/ticker/price",
                         params={"symbol": f"{asset}USDT"},
-                        timeout=5,
                     )
-                    if r.ok:
-                        usd_value = total * float(r.json()["price"])
+                    usd_value = total * float(r.json()["price"])
                 except Exception:
                     pass
 

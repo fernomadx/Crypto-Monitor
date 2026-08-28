@@ -29,6 +29,13 @@ vps/.venv/bin/python vps/kronos_signal.py
 tail -f /var/log/kronos_signal.log
 ```
 
+## MEXC Análise (spot + futuros)
+
+```bash
+python3 vps/mexc_analise.py BTC
+# Telegram QUANT: /mexc ou /mexc ETH
+```
+
 ## Backtest SMC (local / VPS)
 
 ```bash

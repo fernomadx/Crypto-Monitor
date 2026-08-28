@@ -89,6 +89,8 @@ O `kronos_signal.py` já inclui bloco **Contexto QUANT** e veto no scorecard 4H
 /combo5         — análise COMBO5 ao vivo (fora do cron 5 min / horário)
 /analise        — alias de /combo5
 /combo5 BTC     — força o par (ex.: ETH, SOL)
+/mexc           — 📊 MEXC Análise (spot + futuros + funding)
+/mexc BTC       — mesmo, forçando o par
 /btc            — preço LLMQuant + contexto
 /help
 ```

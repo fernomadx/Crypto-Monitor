@@ -6,6 +6,7 @@ Comandos (só responde TELEGRAM_CHAT_ID autorizado):
   /quant, /contexto     — estado atual (notícias de impacto)
   /pesquisa <pergunta>  — consulta LLMQuant + Haiku
   /combo5, /analise     — análise COMBO5 ao vivo (fora do cron)
+  /mexc                 — 📊 MEXC Análise (spot + futuros, sem CCXT)
   /btc /eth /sol        — snapshot mercado + contexto
   /scorecard            — acerto Kronos (simulação 4H)
   /vps [IP|test]        — configura/testa Hetzner BTCCURSOR
@@ -119,6 +120,8 @@ def _help_text() -> str:
         "/pesquisa &lt;pergunta&gt; — pesquisa Quant Wiki + papers\n"
         "/combo5 ou /analise — análise COMBO5 <b>agora</b> (fora do cron)\n"
         "/combo5 BTC — mesmo, forçando o par\n"
+        "/mexc — 📊 MEXC Análise (spot + futuros + funding)\n"
+        "/mexc BTC — mesmo, forçando o par\n"
         "/btc · /eth · /sol — preço + contexto\n"
         "/ping — teste de conexão (também aceita /pin)\n"
         "/scorecard — acerto das entradas Kronos (7d/30d, simulação 4H)\n"
@@ -133,6 +136,17 @@ def _help_text() -> str:
 
 def _handle_context() -> str:
     return format_kronos_footer()
+
+
+def _handle_mexc(args: str) -> str:
+    """📊 MEXC Análise — spot + futuros (substitui CCXT / RequestTimeout)."""
+    from lib.mexc_analise import analyze_now
+
+    try:
+        return analyze_now(args.strip() or None)
+    except Exception as exc:
+        logger.exception("mexc análise: %s", exc)
+        return f"⚠️ Falha na MEXC Análise: {exc}"
 
 
 def _handle_combo5(args: str) -> str:
@@ -264,12 +278,15 @@ def _dispatch(text: str) -> str:
         return (
             f"<b>QUANT online</b>\n{api}\n{alerts}\n"
             f"Modo Kronos: <code>{os.environ.get('QUANT_KRONOS_MODE', 'warn')}</code>\n"
-            f"COMBO5: <code>/combo5</code> ou <code>/analise</code>"
+            f"COMBO5: <code>/combo5</code> ou <code>/analise</code>\n"
+            f"MEXC: <code>/mexc</code>"
         )
     if cmd in ("/quant", "/contexto"):
         return _handle_context()
     if cmd in ("/combo5", "/analise", "/análise", "/c5"):
         return _handle_combo5(rest)
+    if cmd in ("/mexc", "/mexcanálise", "/mexc_analise"):
+        return _handle_mexc(rest)
     if cmd in ("/pesquisa", "/research", "/p"):
         if not rest:
             return "Uso: <code>/pesquisa momentum em crypto</code>"
@@ -325,6 +342,11 @@ def run() -> None:
                     send_quant_reply(
                         chat_id,
                         "⏳ Analisando COMBO5 ao vivo (candles MEXC + Kronos 3TF)…",
+                    )
+                elif cmd in ("/mexc", "/mexcanálise", "/mexc_analise"):
+                    send_quant_reply(
+                        chat_id,
+                        "⏳ Consultando MEXC spot + futuros (retry se a API atrasar)…",
                     )
                 elif cmd in ("/vps", "/hetzner", "/btccursor"):
                     if rest.lower() in ("test", "sync", "check") or (
