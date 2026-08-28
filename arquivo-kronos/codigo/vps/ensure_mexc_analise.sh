@@ -6,9 +6,22 @@ if [ "${MEXC_ANALISE_BOT:-1}" = "0" ] || [ "${MEXC_ANALISE_BOT:-1}" = "false" ];
   exit 0
 fi
 
-BOT="${BOT:-/app/vps/mexc_analise_bot.py}"
+REPO_DIR="${REPO_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
+if [ -f "$REPO_DIR/vps/.env" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . "$REPO_DIR/vps/.env"
+  set +a
+fi
+
+BOT="${BOT:-$REPO_DIR/vps/mexc_analise_bot.py}"
 if [ ! -f "$BOT" ]; then
-  BOT="$(cd "$(dirname "$0")/.." && pwd)/vps/mexc_analise_bot.py"
+  BOT="/app/vps/mexc_analise_bot.py"
+fi
+
+PY="${REPO_DIR}/vps/.venv/bin/python"
+if [ ! -x "$PY" ]; then
+  PY="$(command -v python3 || command -v python)"
 fi
 
 mkdir -p /data/mexc_analise
@@ -25,5 +38,6 @@ elif [ "$n" -eq 1 ]; then
   exit 0
 fi
 
-nohup python "$BOT" >> /data/mexc_analise.log 2>&1 &
+cd "$REPO_DIR"
+nohup "$PY" "$BOT" >> /data/mexc_analise.log 2>&1 &
 echo "ensure_mexc_analise: iniciado pid $!"
