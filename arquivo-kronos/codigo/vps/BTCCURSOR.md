@@ -114,13 +114,16 @@ Actions → **Deploy Kronos to VPS** → **Run workflow**
 | DB | `/data/crypto_monitor.db` | `/opt/crypto-monitor/data/kronos_vps.db` |
 | Cron | no container | COMBO5 5 min + `:10`; sem linhas `kronos_*` |
 
-### COMBO5 + comando `/combo5`
+### COMBO5 na Hetzner (alertas) + comandos no Railway
+
+A VPS envia `[COMBO5]` (cron 5 min + `:10` UTC). **Não** rode `quant_bot` aqui: o mesmo `TELEGRAM_BOT_TOKEN` no Railway já faz `getUpdates`. Dois pollers geram **Telegram 409** e `/ping` `/combo5` param.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/scripts/hetzner-deploy-combo5.sh | sudo bash
+# Reativar COMBO5 + matar quant_bot duplicado
+curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/scripts/hetzner-heal-bots.sh | sudo bash
 ```
 
-Telegram: `/combo5` · `/analise` · `/c5` (ou `/combo5 BTC`). MEXC: `/mexc` · `/mexc BTC`.
+Telegram: `/combo5` · `/analise` · `/c5` · `/mexc` (respondidos pelo Railway). Alertas `[COMBO5]` saem da Hetzner.
 
 Desligar Kronos na Hetzner:
 
@@ -162,43 +165,19 @@ mkdir -p /opt/crypto-monitor/data/huggingface
 
 ---
 
-## 7. `📊 MEXC Análise` (spot + futuros, sem CCXT)
+## 7. `📊 MEXC Análise` (daemon + snapshot, sem CCXT)
 
-No Telegram QUANT: `/mexc` ou `/mexc BTC`.
+O bot que manda **Bot iniciado** (alerts · BTC/USDT:USDT 1h · 20x · poll 15s) agora é o daemon Python neste repo — **não** o CCXT da Hetzner.
 
-CLI / VPS:
+- Sobe no **Railway** com o container (`ensure_mexc_analise.sh`)
+- Snapshot sob demanda: `/mexc` ou `python vps/mexc_analise.py BTC`
+- **Modo alerts** — não envia ordem na exchange (MEXC key continua read-only)
 
-```bash
-cd /opt/crypto-monitor && git pull
-set -a && source vps/.env && set +a
-vps/.venv/bin/python vps/mexc_analise.py BTC
-# envia ao chat:
-vps/.venv/bin/python vps/mexc_analise.py --telegram
-```
+Regras iguais ao banner antigo: cooldown 12h pós-STOP sem inverter, long bloqueado RSI>65 ou ADX≥40, BE em **1.5R** (não 1R), stop máx 5% no short.
 
-Usa `lib/mexc_http.py` (timeout 45s + 4 retries) e `lib/mexc_contract.py`.
-Klines 4h de futuros são **`Hour4`** — `Min240` devolve `code=600 Parameter error`.
+Klines 4h de futuros usam **`Hour4`** (`Min240` = code 600). HTTP com timeout 45s + 4 retries.
 
-Se o bot **CCXT/Node antigo** ainda mostrar:
-
-```
-📊 MEXC Análise
-Erro
-RequestTimeout: mexc GET .../api/v1/contract/kline/BTC_USDT?interval=Min60
-```
-
-desligue esse script e use `/mexc` (este repo). Timeout curto no CCXT era a causa; o cliente Python já faz retry.
-
-Variáveis opcionais no `.env`:
-
-```env
-MEXC_HTTP_TIMEOUT_SEC=45
-MEXC_HTTP_RETRIES=4
-MEXC_CONTRACT_BASE=https://contract.mexc.com
-MEXC_ANALISE_TICKERS=BTC,ETH,SOL
-```
-
-O **Kronos** usa spot (`/api/v3/klines`) — o mesmo retry (`lib/mexc_http.py`).
+Se o script CCXT antigo ainda estiver na VPS, mate-o (RequestTimeout). Este daemon substitui.
 
 ---
 

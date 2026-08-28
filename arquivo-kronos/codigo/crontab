@@ -47,3 +47,5 @@
 
 # MEXC Análise: sob demanda via /mexc (QUANT bot). Cron opcional:
 # 7 * * * * python /app/vps/mexc_analise.py --telegram >> /data/mexc_analise.log 2>&1
+# Daemon alerts (BTC 1h, poll 15s) — watchdog
+*/2 * * * * /app/vps/ensure_mexc_analise.sh >> /data/mexc_analise.log 2>&1
