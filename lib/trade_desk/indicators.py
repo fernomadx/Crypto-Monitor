@@ -34,6 +34,29 @@ def atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
     return tr.rolling(period).mean()
 
 
+def adx(df: pd.DataFrame, period: int = 14) -> pd.Series:
+    """ADX Wilder (série; último valor = força da tendência)."""
+    high, low, close = df["high"], df["low"], df["close"]
+    prev_close = close.shift(1)
+    tr = pd.concat(
+        [
+            high - low,
+            (high - prev_close).abs(),
+            (low - prev_close).abs(),
+        ],
+        axis=1,
+    ).max(axis=1)
+    up = high - high.shift(1)
+    down = low.shift(1) - low
+    plus_dm = up.where((up > down) & (up > 0), 0.0)
+    minus_dm = down.where((down > up) & (down > 0), 0.0)
+    atr_w = tr.ewm(alpha=1 / period, adjust=False).mean().clip(lower=1e-12)
+    plus_di = 100 * plus_dm.ewm(alpha=1 / period, adjust=False).mean() / atr_w
+    minus_di = 100 * minus_dm.ewm(alpha=1 / period, adjust=False).mean() / atr_w
+    dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di).clip(lower=1e-12)
+    return dx.ewm(alpha=1 / period, adjust=False).mean()
+
+
 def enrich(df: pd.DataFrame) -> pd.DataFrame:
     need = {"ema_fast", "rsi", "macd", "hist", "atr"}
     if need.issubset(df.columns):
@@ -44,5 +67,6 @@ def enrich(df: pd.DataFrame) -> pd.DataFrame:
     out["rsi"] = rsi(out["close"], 14)
     out = out.join(macd(out["close"]))
     out["atr"] = atr(out, 14)
+    out["adx"] = adx(out, 14)
     out["vol_sma"] = out["volume"].rolling(20).mean()
     return out

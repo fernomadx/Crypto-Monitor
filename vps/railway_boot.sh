@@ -43,6 +43,7 @@ try:
         "Comandos: <code>/ping</code> <code>/quant</code> "
         "<code>/combo5</code> <code>/scorecard</code> <code>/vps IP</code> "
         "<code>/pesquisa sua pergunta</code>\n"
+        "Webhook Telegram: comandos no Railway mesmo se a Hetzner ainda pollar.\n"
         + (
             f"⚡ Alertas imediatos: <b>ON</b> (notícia forte ≥ {thresh})\n"
             if alerts_on
@@ -75,6 +76,9 @@ except Exception as e:
     print("combo5 boot telegram:", e)
 PY
 COMBO5_FORCE_STATUS=1 python /app/vps/combo5_signal.py >> /data/combo5.log 2>&1 || true
+
+echo "MEXC Análise: daemon alerts (15s)..."
+/app/vps/ensure_mexc_analise.sh || true
 
 echo "Hetzner: desligando Kronos duplicado (one-shot)..."
 python - <<'PY' || true

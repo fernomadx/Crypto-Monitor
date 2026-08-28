@@ -43,8 +43,8 @@ arquivo-kronos/
 
 | Pasta | Arquivos principais |
 |-------|---------------------|
-| `lib/` | kronos_tracker, levels, alignment, mexc_klines, telegram, smc_strategy |
-| `vps/` | kronos_signal, scorecard, daily_report, status, reset, smc_backtest |
+| `lib/` | kronos_tracker, levels, alignment, mexc_klines, mexc_analise, telegram, smc_strategy |
+| `vps/` | kronos_signal, scorecard, daily_report, status, reset, smc_backtest, mexc_analise |
 | raiz | Dockerfile, crontab, railway.toml |
 | `workflows/` | deploy-kronos-vps, kronos-daily-report, kronos-telegram-cron |
 

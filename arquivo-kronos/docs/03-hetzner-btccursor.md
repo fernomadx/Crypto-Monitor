@@ -26,14 +26,14 @@ crontab -e   # vps/crontab.example
 
 Secrets: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` → workflow `Deploy Kronos to VPS` / `Deploy COMBO5 to Hetzner`.
 
-## COMBO5 + `/combo5` na Hetzner
+## COMBO5 na Hetzner
 
 Na Console Hetzner (root), uma linha:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/scripts/hetzner-deploy-combo5.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/scripts/hetzner-heal-bots.sh | sudo bash
 ```
 
-Isso faz `git pull`, cron COMBO5 (5 min + `:10` UTC), reinicia `quant_bot` com `/combo5` · `/analise`.
+Isso faz `git pull`, cron COMBO5 (5 min + `:10` UTC) e **desliga** `quant_bot` na VPS (comandos `/combo5` ficam no Railway — evita Telegram 409).
 
-**Nota:** sem `VPS_SSH_KEY` no GitHub, o agente Cloud não acessa a VPS — use o comando acima na Console.
+**Nota:** sem `VPS_SSH_KEY` no GitHub e com SSH 22 fechado, o agente Cloud não acessa a VPS — use o comando acima na Console.

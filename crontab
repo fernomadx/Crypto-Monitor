@@ -44,3 +44,8 @@
 10 * * * * /bin/sh -c 'COMBO5_FORCE_STATUS=1 python /app/vps/combo5_signal.py' >> /data/combo5.log 2>&1
 # COMBO5: watchdog se ficar >75 min sem ciclo OK
 */15 * * * * /app/vps/ensure_combo5.sh >> /data/combo5.log 2>&1
+
+# MEXC Análise: sob demanda via /mexc (QUANT bot). Cron opcional:
+# 7 * * * * python /app/vps/mexc_analise.py --telegram >> /data/mexc_analise.log 2>&1
+# Daemon alerts (BTC 1h, poll 15s) — watchdog
+*/2 * * * * /app/vps/ensure_mexc_analise.sh >> /data/mexc_analise.log 2>&1

@@ -6,6 +6,7 @@ Comandos (só responde TELEGRAM_CHAT_ID autorizado):
   /quant, /contexto     — estado atual (notícias de impacto)
   /pesquisa <pergunta>  — consulta LLMQuant + Haiku
   /combo5, /analise     — análise COMBO5 ao vivo (fora do cron)
+  /mexc                 — 📊 MEXC Análise (spot + futuros, sem CCXT)
   /btc /eth /sol        — snapshot mercado + contexto
   /scorecard            — acerto Kronos (simulação 4H)
   /vps [IP|test]        — configura/testa Hetzner BTCCURSOR
@@ -17,10 +18,14 @@ Rodar no Hetzner: nohup python vps/quant_bot.py >> /data/quant_bot.log 2>&1 &
 from __future__ import annotations
 
 import fcntl
+import hashlib
+import json
 import logging
 import os
 import sys
+import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import requests
@@ -41,6 +46,15 @@ POLL_SEC = int(os.environ.get("QUANT_BOT_POLL_SEC", "2"))
 _singleton_fp = None
 
 
+def _enabled() -> bool:
+    return os.environ.get("QUANT_BOT_ENABLED", "1").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
+
+
 def _bot_token() -> str:
     return os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 
@@ -49,13 +63,18 @@ def _allowed_chat() -> str:
     return os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 
 
+class TelegramConflict(RuntimeError):
+    """Telegram 409 — outro getUpdates (Railway vs Hetzner) no mesmo token."""
+
+
 def _api(method: str, **kwargs) -> dict:
     token = _bot_token()
     resp = requests.post(f"https://api.telegram.org/bot{token}/{method}", json=kwargs, timeout=30)
     if resp.status_code == 409:
-        raise RuntimeError(
+        raise TelegramConflict(
             "Telegram 409: outro processo usa getUpdates neste bot "
-            "(webhook ou segunda instância). Pare duplicatas."
+            "(webhook ou segunda instância Hetzner/Railway). "
+            "Na VPS: QUANT_BOT_ENABLED=0 e mate quant_bot.py."
         )
     resp.raise_for_status()
     return resp.json()
@@ -78,6 +97,54 @@ def _acquire_singleton() -> bool:
     return True
 
 
+def _bot_mode() -> str:
+    raw = os.environ.get("QUANT_BOT_MODE", "auto").strip().lower()
+    if raw in {"webhook", "poll", "polling"}:
+        return "poll" if raw == "polling" else raw
+    return "auto"
+
+
+def _webhook_secret() -> str:
+    explicit = os.environ.get("QUANT_WEBHOOK_SECRET", "").strip()
+    if explicit:
+        return explicit[:256]
+    token = _bot_token()
+    return hashlib.sha256(f"quant-webhook:{token}".encode("utf-8")).hexdigest()
+
+
+def webhook_public_url() -> str:
+    """URL HTTPS que o Telegram chama. Vazio = usar polling."""
+    explicit = os.environ.get("QUANT_WEBHOOK_URL", "").strip()
+    if explicit:
+        url = explicit.rstrip("/")
+        if not url.endswith("/telegram"):
+            url = f"{url}/telegram"
+        if url.startswith("http://"):
+            url = "https://" + url[len("http://") :]
+        return url
+    domain = (
+        os.environ.get("RAILWAY_PUBLIC_DOMAIN")
+        or os.environ.get("RAILWAY_STATIC_URL")
+        or ""
+    ).strip()
+    if not domain:
+        return ""
+    if domain.startswith("http://"):
+        domain = "https://" + domain[len("http://") :]
+    elif not domain.startswith("https://"):
+        domain = f"https://{domain}"
+    return domain.rstrip("/") + "/telegram"
+
+
+def _listen_port() -> int:
+    raw = os.environ.get("PORT", "").strip()
+    if raw.isdigit():
+        return int(raw)
+    if os.environ.get("RAILWAY_ENVIRONMENT") or webhook_public_url():
+        return 8080
+    return 0
+
+
 def _ensure_polling() -> None:
     """Remove webhook para permitir getUpdates (comum após deploy)."""
     try:
@@ -85,6 +152,29 @@ def _ensure_polling() -> None:
         logger.info("Telegram: webhook removido — modo polling ativo")
     except Exception as exc:
         logger.warning("deleteWebhook: %s", exc)
+
+
+def _ensure_webhook(url: str) -> None:
+    secret = _webhook_secret()
+    last_err = "sem tentativa"
+    for attempt in range(1, 9):
+        try:
+            data = _api(
+                "setWebhook",
+                url=url,
+                secret_token=secret,
+                allowed_updates=["message"],
+                drop_pending_updates=False,
+            )
+            if data.get("ok"):
+                logger.info("Telegram webhook ativo: %s", url)
+                return
+            last_err = str(data)
+        except Exception as exc:
+            last_err = str(exc)
+        logger.warning("setWebhook tentativa %s/8: %s", attempt, last_err)
+        time.sleep(min(5 * attempt, 20))
+    raise RuntimeError(f"setWebhook falhou: {last_err}")
 
 
 def _load_offset() -> int:
@@ -119,6 +209,8 @@ def _help_text() -> str:
         "/pesquisa &lt;pergunta&gt; — pesquisa Quant Wiki + papers\n"
         "/combo5 ou /analise — análise COMBO5 <b>agora</b> (fora do cron)\n"
         "/combo5 BTC — mesmo, forçando o par\n"
+        "/mexc — 📊 MEXC Análise (spot + futuros + funding)\n"
+        "/mexc BTC — mesmo, forçando o par\n"
         "/btc · /eth · /sol — preço + contexto\n"
         "/ping — teste de conexão (também aceita /pin)\n"
         "/scorecard — acerto das entradas Kronos (7d/30d, simulação 4H)\n"
@@ -133,6 +225,17 @@ def _help_text() -> str:
 
 def _handle_context() -> str:
     return format_kronos_footer()
+
+
+def _handle_mexc(args: str) -> str:
+    """📊 MEXC Análise — spot + futuros (substitui CCXT / RequestTimeout)."""
+    from lib.mexc_analise import analyze_now
+
+    try:
+        return analyze_now(args.strip() or None)
+    except Exception as exc:
+        logger.exception("mexc análise: %s", exc)
+        return f"⚠️ Falha na MEXC Análise: {exc}"
 
 
 def _handle_combo5(args: str) -> str:
@@ -264,12 +367,15 @@ def _dispatch(text: str) -> str:
         return (
             f"<b>QUANT online</b>\n{api}\n{alerts}\n"
             f"Modo Kronos: <code>{os.environ.get('QUANT_KRONOS_MODE', 'warn')}</code>\n"
-            f"COMBO5: <code>/combo5</code> ou <code>/analise</code>"
+            f"COMBO5: <code>/combo5</code> ou <code>/analise</code>\n"
+            f"MEXC: <code>/mexc</code>"
         )
     if cmd in ("/quant", "/contexto"):
         return _handle_context()
     if cmd in ("/combo5", "/analise", "/análise", "/c5"):
         return _handle_combo5(rest)
+    if cmd in ("/mexc", "/mexcanálise", "/mexc_analise"):
+        return _handle_mexc(rest)
     if cmd in ("/pesquisa", "/research", "/p"):
         if not rest:
             return "Uso: <code>/pesquisa momentum em crypto</code>"
@@ -289,14 +395,155 @@ def _dispatch(text: str) -> str:
     return _help_text()
 
 
+def _process_update(upd: dict) -> None:
+    msg = upd.get("message") or {}
+    chat_id = str(msg.get("chat", {}).get("id", ""))
+    text = (msg.get("text") or "").strip()
+
+    if chat_id != _allowed_chat() or not text.startswith("/"):
+        return
+
+    logger.info("Comando: %s", text[:80])
+    cmd, _, rest = text.strip().partition(" ")
+    cmd = cmd.split("@")[0].lower()
+    rest = rest.strip()
+    if cmd in ("/scorecard", "/score", "/acerto"):
+        send_quant_reply(
+            chat_id,
+            "⏳ Calculando scorecard Kronos (consulta MEXC + catálogo)…",
+        )
+    elif cmd in ("/combo5", "/analise", "/análise", "/c5"):
+        send_quant_reply(
+            chat_id,
+            "⏳ Analisando COMBO5 ao vivo (candles MEXC + Kronos 3TF)…",
+        )
+    elif cmd in ("/mexc", "/mexcanálise", "/mexc_analise"):
+        send_quant_reply(
+            chat_id,
+            "⏳ Consultando MEXC spot + futuros (retry se a API atrasar)…",
+        )
+    elif cmd in ("/vps", "/hetzner", "/btccursor"):
+        if rest.lower() in ("test", "sync", "check") or (
+            rest and rest.split()[0][0].isdigit()
+        ):
+            send_quant_reply(chat_id, "⏳ Hetzner: desligando Kronos duplicado e verificando…")
+    reply = _dispatch(text)
+    if not send_quant_reply(chat_id, reply):
+        send_quant_reply(
+            chat_id,
+            "⚠️ Falha ao enviar resposta. Tente de novo em alguns segundos.",
+            parse_mode=None,
+        )
+
+
+class _WebhookHandler(BaseHTTPRequestHandler):
+    def log_message(self, fmt: str, *args) -> None:
+        logger.info("webhook " + fmt, *args)
+
+    def _send(self, code: int, body: bytes, content_type: str = "text/plain") -> None:
+        self.send_response(code)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self) -> None:  # noqa: N802
+        path = self.path.split("?", 1)[0].rstrip("/") or "/"
+        if path in {"/", "/health", "/healthz"}:
+            self._send(200, b"quant-bot ok\n")
+            return
+        self._send(404, b"not found\n")
+
+    def do_POST(self) -> None:  # noqa: N802
+        path = self.path.split("?", 1)[0].rstrip("/") or "/"
+        if path != "/telegram":
+            self._send(404, b"not found\n")
+            return
+        got = self.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+        if got != _webhook_secret():
+            logger.warning("webhook: secret_token inválido")
+            self._send(403, b"forbidden\n")
+            return
+        length = int(self.headers.get("Content-Length") or "0")
+        raw = self.rfile.read(length) if length > 0 else b"{}"
+        try:
+            payload = json.loads(raw.decode("utf-8") or "{}")
+        except json.JSONDecodeError:
+            self._send(400, b"bad json\n")
+            return
+        threading.Thread(target=_process_update, args=(payload,), daemon=True).start()
+        self._send(200, b"ok")
+
+
+def _start_http(port: int) -> ThreadingHTTPServer | None:
+    try:
+        server = ThreadingHTTPServer(("0.0.0.0", port), _WebhookHandler)
+    except OSError as exc:
+        logger.warning("HTTP porta %s ocupada: %s", port, exc)
+        return None
+    thread = threading.Thread(target=server.serve_forever, name="quant-http", daemon=True)
+    thread.start()
+    logger.info("HTTP quant_bot em 0.0.0.0:%s (/health, /telegram)", port)
+    return server
+
+
+def _resolve_webhook_url() -> str:
+    mode = _bot_mode()
+    if mode == "poll":
+        return ""
+    url = webhook_public_url()
+    if url:
+        return url
+    if mode != "webhook" and not os.environ.get("RAILWAY_ENVIRONMENT"):
+        return ""
+    for i in range(3):
+        url = webhook_public_url()
+        if url:
+            return url
+        logger.info("Aguardando RAILWAY_PUBLIC_DOMAIN (%s/3)…", i + 1)
+        time.sleep(5)
+    return webhook_public_url()
+
+
 def run() -> None:
+    port = _listen_port()
+
+    if not _enabled():
+        logger.info("QUANT_BOT_ENABLED=0 — Telegram off; /health se PORT")
+        if port:
+            _start_http(port)
+            while True:
+                time.sleep(3600)
+        return
+
     if not _bot_token() or not _allowed_chat():
+        logger.error("TELEGRAM_BOT_TOKEN/CHAT_ID ausentes")
+        if port:
+            _start_http(port)
+            while True:
+                time.sleep(3600)
         raise RuntimeError("TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID obrigatórios")
 
     if not _acquire_singleton():
         return
 
     logger.info("QUANT bot ativo (chat %s)", _allowed_chat())
+    http = _start_http(port) if port else None
+    webhook_url = _resolve_webhook_url()
+
+    if webhook_url:
+        try:
+            _ensure_webhook(webhook_url)
+            logger.info("Modo webhook — Hetzner getUpdates recebe 409 (esperado)")
+            if http is None:
+                raise RuntimeError("webhook exige HTTP (defina PORT)")
+            while True:
+                time.sleep(3600)
+        except Exception as exc:
+            logger.exception("webhook falhou (%s) — caindo para polling", exc)
+            if http is None and port:
+                http = _start_http(port)
+
     _ensure_polling()
     offset = _load_offset()
 
@@ -305,41 +552,23 @@ def run() -> None:
             data = _api("getUpdates", offset=offset, timeout=30, allowed_updates=["message"])
             for upd in data.get("result", []):
                 offset = upd["update_id"] + 1
-                msg = upd.get("message") or {}
-                chat_id = str(msg.get("chat", {}).get("id", ""))
-                text = (msg.get("text") or "").strip()
-
-                if chat_id != _allowed_chat() or not text.startswith("/"):
-                    continue
-
-                logger.info("Comando: %s", text[:80])
-                cmd, _, rest = text.strip().partition(" ")
-                cmd = cmd.split("@")[0].lower()
-                rest = rest.strip()
-                if cmd in ("/scorecard", "/score", "/acerto"):
-                    send_quant_reply(
-                        chat_id,
-                        "⏳ Calculando scorecard Kronos (consulta MEXC + catálogo)…",
-                    )
-                elif cmd in ("/combo5", "/analise", "/análise", "/c5"):
-                    send_quant_reply(
-                        chat_id,
-                        "⏳ Analisando COMBO5 ao vivo (candles MEXC + Kronos 3TF)…",
-                    )
-                elif cmd in ("/vps", "/hetzner", "/btccursor"):
-                    if rest.lower() in ("test", "sync", "check") or (
-                        rest and rest.split()[0][0].isdigit()
-                    ):
-                        send_quant_reply(chat_id, "⏳ Hetzner: desligando Kronos duplicado e verificando…")
-                reply = _dispatch(text)
-                if not send_quant_reply(chat_id, reply):
-                    send_quant_reply(
-                        chat_id,
-                        "⚠️ Falha ao enviar resposta. Tente de novo em alguns segundos.",
-                        parse_mode=None,
-                    )
-
+                _process_update(upd)
             _save_offset(offset)
+        except TelegramConflict as exc:
+            logger.warning("%s — tenta webhook, senão retry 20s", exc)
+            url = webhook_public_url()
+            if url:
+                try:
+                    if http is None and port:
+                        http = _start_http(port)
+                    _ensure_webhook(url)
+                    logger.info("Passou a webhook após 409: %s", url)
+                    while True:
+                        time.sleep(3600)
+                except Exception as hook_exc:
+                    logger.warning("webhook após 409 falhou: %s", hook_exc)
+            time.sleep(20)
+            continue
         except Exception as exc:
             logger.exception("quant_bot loop: %s", exc)
             time.sleep(5)

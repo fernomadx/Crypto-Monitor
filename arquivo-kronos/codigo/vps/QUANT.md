@@ -19,6 +19,10 @@ O `railway_boot.sh` sobe o `quant_bot` e o `crontab` roda o `quant_watcher` a ca
 
 O bot sobe via `ensure_quant_bot.sh` (boot + cron a cada 3 min). Se `/ping` falhar, confira `/data/quant_bot.log` no Railway.
 
+No Railway o bot tenta **webhook** (`RAILWAY_PUBLIC_DOMAIN` + `PORT`) para o Telegram entregar `/ping` mesmo se a Hetzner ainda fizer `getUpdates` (409). Sem domínio público, cai para polling. Gere o domínio em Railway → Settings → Networking se `/ping` continuar mudo.
+
+**Telegram 409:** só **um** poller por token. Na Hetzner use `QUANT_BOT_ENABLED=0`. Heal: `scripts/hetzner-heal-bots.sh`.
+
 Ou rode `bash scripts/railway-configure-quant.sh` com `RAILWAY_TOKEN` + `LLMQUANT_API_KEY`.
 
 ## Setup Hetzner (recomendado)
@@ -89,6 +93,9 @@ O `kronos_signal.py` já inclui bloco **Contexto QUANT** e veto no scorecard 4H
 /combo5         — análise COMBO5 ao vivo (fora do cron 5 min / horário)
 /analise        — alias de /combo5
 /combo5 BTC     — força o par (ex.: ETH, SOL)
+/mexc           — 📊 MEXC Análise snapshot (spot + futuros + funding)
+/mexc BTC       — mesmo, forçando o par
+Daemon 📊 MEXC Análise (alerts, BTC 1h, 20x, poll 15s) sobe no boot do Railway.
 /btc            — preço LLMQuant + contexto
 /help
 ```

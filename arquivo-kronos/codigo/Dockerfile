@@ -62,13 +62,19 @@ ENV KRONOS_PATH=/app/Kronos \
     COMBO5_ENABLED=true \
     COMBO5_STATE_DIR=/data/combo5 \
     COMBO5_TICKERS=BTC \
-    COMBO5_HEARTBEAT_MINUTES=60
+    COMBO5_HEARTBEAT_MINUTES=60 \
+    QUANT_BOT_MODE=auto \
+    PORT=8080
 
-RUN mkdir -p /data /data/combo5 /data/kronos/charts /data/huggingface \
+EXPOSE 8080
+
+RUN mkdir -p /data /data/combo5 /data/mexc_analise /data/kronos/charts /data/huggingface \
     && chmod +x /app/vps/railway_boot.sh /app/vps/kronos_run.sh /app/vps/kronos_candle_cron.sh \
     /app/vps/kronos_backup_cron.sh /app/vps/kronos_daemon.py /app/vps/ensure_kronos_daemon.sh \
-    /app/vps/ensure_quant_bot.sh /app/vps/ensure_combo5.sh /app/vps/combo5_signal.py \
-    /app/vps/quant_bot.py /app/vps/quant_watcher.py /app/vps/quant_hourly_news.py 2>/dev/null || true
+    /app/vps/ensure_quant_bot.sh /app/vps/ensure_combo5.sh /app/vps/ensure_mexc_analise.sh \
+    /app/vps/combo5_signal.py \
+    /app/vps/quant_bot.py /app/vps/quant_watcher.py /app/vps/quant_hourly_news.py \
+    /app/vps/mexc_analise_bot.py /app/vps/wait_health.py /app/vps/container_start.sh 2>/dev/null || true
 
-# supercronic + boot Kronos (1ª execução após deploy)
-CMD ["/bin/sh", "-c", "/app/vps/railway_boot.sh & exec supercronic /app/crontab"]
+# /health no ar antes do cron — senão o healthcheck do Railway derruba todos os bots
+CMD ["/bin/sh", "/app/vps/container_start.sh"]
