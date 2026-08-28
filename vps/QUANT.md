@@ -19,7 +19,9 @@ O `railway_boot.sh` sobe o `quant_bot` e o `crontab` roda o `quant_watcher` a ca
 
 O bot sobe via `ensure_quant_bot.sh` (boot + cron a cada 3 min). Se `/ping` falhar, confira `/data/quant_bot.log` no Railway.
 
-**Telegram 409:** só **um** `quant_bot` pode fazer `getUpdates` por token. Na Hetzner use `QUANT_BOT_ENABLED=0` (comandos ficam no Railway). Heal: `scripts/hetzner-heal-bots.sh`.
+No Railway o bot tenta **webhook** (`RAILWAY_PUBLIC_DOMAIN` + `PORT`) para o Telegram entregar `/ping` mesmo se a Hetzner ainda fizer `getUpdates` (409). Sem domínio público, cai para polling. Gere o domínio em Railway → Settings → Networking se `/ping` continuar mudo.
+
+**Telegram 409:** só **um** poller por token. Na Hetzner use `QUANT_BOT_ENABLED=0`. Heal: `scripts/hetzner-heal-bots.sh`.
 
 Ou rode `bash scripts/railway-configure-quant.sh` com `RAILWAY_TOKEN` + `LLMQUANT_API_KEY`.
 

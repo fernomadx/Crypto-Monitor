@@ -37,6 +37,7 @@ copy vps/kronos_run.sh
 copy vps/kronos_watchdog.py
 copy vps/quant_watcher.py
 copy vps/quant_bot.py
+copy vps/quant_bot_test.py
 copy vps/quant_test.py
 copy vps/combo5_signal.py
 copy vps/ensure_combo5.sh

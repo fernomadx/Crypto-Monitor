@@ -43,6 +43,7 @@ try:
         "Comandos: <code>/ping</code> <code>/quant</code> "
         "<code>/combo5</code> <code>/scorecard</code> <code>/vps IP</code> "
         "<code>/pesquisa sua pergunta</code>\n"
+        "Webhook Telegram: comandos no Railway mesmo se a Hetzner ainda pollar.\n"
         + (
             f"⚡ Alertas imediatos: <b>ON</b> (notícia forte ≥ {thresh})\n"
             if alerts_on

@@ -62,7 +62,11 @@ ENV KRONOS_PATH=/app/Kronos \
     COMBO5_ENABLED=true \
     COMBO5_STATE_DIR=/data/combo5 \
     COMBO5_TICKERS=BTC \
-    COMBO5_HEARTBEAT_MINUTES=60
+    COMBO5_HEARTBEAT_MINUTES=60 \
+    QUANT_BOT_MODE=auto \
+    PORT=8080
+
+EXPOSE 8080
 
 RUN mkdir -p /data /data/combo5 /data/kronos/charts /data/huggingface \
     && chmod +x /app/vps/railway_boot.sh /app/vps/kronos_run.sh /app/vps/kronos_candle_cron.sh \

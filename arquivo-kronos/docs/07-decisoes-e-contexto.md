@@ -1,6 +1,6 @@
 # Decisões e contexto (linha do tempo)
 
-- **Hetzner bots parados (2026-08-27)** — `quant_bot` na VPS + Railway no mesmo `TELEGRAM_BOT_TOKEN` → Telegram 409 (getUpdates). Deploy Actions falha sem `VPS_SSH_KEY`; SSH 22 no IP `204.168.179.200` timeout daqui. Fix: `QUANT_BOT_ENABLED=0` na Hetzner (comandos no Railway); cron COMBO5 permanece; heal `scripts/hetzner-heal-bots.sh`.
+- **Hetzner bots parados (2026-08-27)** — `quant_bot` na VPS + Railway no mesmo `TELEGRAM_BOT_TOKEN` → Telegram 409 (getUpdates). SSH 22 no IP `204.168.179.200` timeout. Fix: webhook Telegram no Railway (`PORT` + `RAILWAY_PUBLIC_DOMAIN`) para comandos sobreviverem ao poller da VPS; `QUANT_BOT_ENABLED=0` na Hetzner; heal `scripts/hetzner-heal-bots.sh`.
 - **COMBO5 Railway state path (2026-08)** — bug: se `/data/combo5` não existia no volume, o bot caía em path efêmero e “parava” após redeploy. Fix: sempre cria `/data/combo5` + watchdog `ensure_combo5.sh` + rate-limit de erros.
 - **COMBO5 na Hetzner (2026-08)** — análise + `/combo5` rodam na VPS (`scripts/hetzner-deploy-combo5.sh`); cron 5 min + `:10` UTC; `quant_bot` com watchdog local.
 - **COMBO5 sob demanda (2026-08)** — comandos Telegram `/combo5` · `/analise` · `/c5` no `quant_bot` disparam o mesmo ciclo de análise (candles MEXC + 3TF + desk) fora do cron de 5 min / horário; opcional `/combo5 BTC`.
