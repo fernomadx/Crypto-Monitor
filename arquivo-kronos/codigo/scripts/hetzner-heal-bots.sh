@@ -49,8 +49,9 @@ upsert() {
 upsert QUANT_BOT_ENABLED 0
 upsert COMBO5_ENABLED 1
 upsert COMBO5_STATE_DIR /data/combo5
-mkdir -p /data/combo5 /data
-chmod 755 /data/combo5
+upsert MEXC_ANALISE_BOT 1
+mkdir -p /data/combo5 /data /data/mexc_analise
+chmod 755 /data/combo5 /data/mexc_analise
 
 if [ ! -x "$REPO_DIR/vps/.venv/bin/python" ]; then
   python3 -m venv "$REPO_DIR/vps/.venv"
@@ -70,35 +71,47 @@ set +a
 cd "$REPO_DIR"
 exec "$REPO_DIR/vps/.venv/bin/python" "$REPO_DIR/vps/combo5_signal.py" "$@"
 EOF
-chmod +x "$REPO_DIR/vps/run_combo5.sh" "$REPO_DIR/vps/combo5_signal.py"
+chmod +x "$REPO_DIR/vps/run_combo5.sh" "$REPO_DIR/vps/combo5_signal.py" \
+  "$REPO_DIR/vps/mexc_analise_bot.py" "$REPO_DIR/vps/ensure_mexc_analise.sh" 2>/dev/null || true
+
+# SSH: se UFW bloqueou 22, libera (Cloud Firewall do painel Hetzner é outro lugar)
+if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -qi active; then
+  ufw allow OpenSSH >/dev/null 2>&1 || true
+  echo "  ✅ UFW: OpenSSH permitido"
+fi
 
 echo "  → parando quant_bot (evita Telegram 409 com o Railway)"
 pkill -f 'quant_bot.py' 2>/dev/null || true
 sleep 1
 
-touch /var/log/combo5.log /data/quant_bot.log
+touch /var/log/combo5.log /data/quant_bot.log /data/mexc_analise.log
 TMP=$(mktemp)
-crontab -l 2>/dev/null | grep -vE 'combo5|run_combo5|ensure_quant_bot|quant_bot' > "$TMP" || true
+crontab -l 2>/dev/null | grep -vE 'combo5|run_combo5|ensure_quant_bot|quant_bot|mexc_analise' > "$TMP" || true
 {
   echo "*/5 * * * * /opt/crypto-monitor/vps/run_combo5.sh >> /var/log/combo5.log 2>&1"
   echo "10 * * * * COMBO5_FORCE_STATUS=1 /opt/crypto-monitor/vps/run_combo5.sh >> /var/log/combo5.log 2>&1"
+  echo "*/2 * * * * REPO_DIR=/opt/crypto-monitor /opt/crypto-monitor/vps/ensure_mexc_analise.sh >> /data/mexc_analise.log 2>&1"
 } >> "$TMP"
 crontab "$TMP"
 rm -f "$TMP"
-echo "  ✅ cron COMBO5 (5 min + :10 UTC) — sem watchdog quant_bot"
+echo "  ✅ cron COMBO5 (5 min + :10 UTC) + watchdog MEXC Análise"
+
+echo "  → subindo daemon 📊 MEXC Análise"
+REPO_DIR="$REPO_DIR" BOT="$REPO_DIR/vps/mexc_analise_bot.py" \
+  "$REPO_DIR/vps/ensure_mexc_analise.sh" || true
 
 echo
 echo "=== Diagnóstico ==="
 echo "-- disk --"
 df -h / /data 2>/dev/null || df -h /
 echo "-- processes --"
-ps -ef | grep -E 'quant_bot|combo5_signal|kronos_' | grep -v grep || echo "  (nenhum processo bot listado)"
+ps -ef | grep -E 'quant_bot|combo5_signal|kronos_|mexc_analise' | grep -v grep || echo "  (nenhum processo bot listado)"
 echo "-- crontab --"
-crontab -l | grep -E 'combo5|quant_bot|kronos' || echo "  (sem linhas combo5/quant/kronos)"
+crontab -l | grep -E 'combo5|quant_bot|kronos|mexc' || echo "  (sem linhas combo5/quant/kronos/mexc)"
 echo "-- combo5 log --"
-tail -n 30 /var/log/combo5.log 2>/dev/null || echo "  (sem log)"
-echo "-- quant_bot log --"
-tail -n 20 /data/quant_bot.log 2>/dev/null || echo "  (sem log)"
+tail -n 20 /var/log/combo5.log 2>/dev/null || echo "  (sem log)"
+echo "-- mexc_analise log --"
+tail -n 20 /data/mexc_analise.log 2>/dev/null || echo "  (sem log)"
 
 set -a
 # shellcheck disable=SC1091
@@ -124,14 +137,20 @@ try:
     from lib.telegram import send_combo5_alert
     send_combo5_alert(
         "Heal Hetzner",
-        "COMBO5 reativado nesta VPS.\n"
-        "• cron 5 min + análise <code>:10</code> UTC\n"
-        "• <code>quant_bot</code> <b>off</b> aqui — comandos <code>/ping</code> <code>/combo5</code> no Railway\n"
-        "<i>Evita Telegram 409 (dois getUpdates no mesmo token).</i>",
+        "VPS reativada.\n"
+        "• COMBO5 cron 5 min + <code>:10</code> UTC\n"
+        "• 📊 MEXC Análise daemon (BTC 1h)\n"
+        "• <code>quant_bot</code> off aqui (comandos no Railway)\n",
     )
     print("  ✅ alerta [COMBO5] Heal enviado")
 except Exception as exc:
     print("  ⚠️ Telegram send:", exc)
+try:
+    from lib.telegram import send
+    send("📊 <b>MEXC Análise</b> reativada na Hetzner (heal).")
+    print("  ✅ alerta MEXC Análise enviado")
+except Exception as exc:
+    print("  ⚠️ MEXC send:", exc)
 PY
 
 COMBO5_FORCE_STATUS=1 "$REPO_DIR/vps/.venv/bin/python" "$REPO_DIR/vps/combo5_signal.py" || true
@@ -139,6 +158,6 @@ COMBO5_FORCE_STATUS=1 "$REPO_DIR/vps/.venv/bin/python" "$REPO_DIR/vps/combo5_sig
 echo
 echo "=== Heal concluído ==="
 echo "  git:  $(git -C "$REPO_DIR" rev-parse --short HEAD)"
-echo "  COMBO5 cron ativo; quant_bot morto nesta VPS"
-echo "  Telegram: deve chegar [COMBO5] Heal Hetzner"
+echo "  COMBO5 cron + MEXC Análise daemon ativos; quant_bot off nesta VPS"
+echo "  Telegram: [COMBO5] Heal Hetzner + 📊 MEXC Análise"
 echo "  log:  tail -f /var/log/combo5.log"
