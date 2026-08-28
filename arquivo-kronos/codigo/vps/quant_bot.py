@@ -475,8 +475,12 @@ class _WebhookHandler(BaseHTTPRequestHandler):
         self._send(200, b"ok")
 
 
-def _start_http(port: int) -> ThreadingHTTPServer:
-    server = ThreadingHTTPServer(("0.0.0.0", port), _WebhookHandler)
+def _start_http(port: int) -> ThreadingHTTPServer | None:
+    try:
+        server = ThreadingHTTPServer(("0.0.0.0", port), _WebhookHandler)
+    except OSError as exc:
+        logger.warning("HTTP porta %s ocupada: %s", port, exc)
+        return None
     thread = threading.Thread(target=server.serve_forever, name="quant-http", daemon=True)
     thread.start()
     logger.info("HTTP quant_bot em 0.0.0.0:%s (/health, /telegram)", port)
@@ -502,18 +506,28 @@ def _resolve_webhook_url() -> str:
 
 
 def run() -> None:
+    port = _listen_port()
+
     if not _enabled():
-        logger.info("QUANT_BOT_ENABLED=0 — bot desligado")
+        logger.info("QUANT_BOT_ENABLED=0 — Telegram off; /health se PORT")
+        if port:
+            _start_http(port)
+            while True:
+                time.sleep(3600)
         return
 
     if not _bot_token() or not _allowed_chat():
+        logger.error("TELEGRAM_BOT_TOKEN/CHAT_ID ausentes")
+        if port:
+            _start_http(port)
+            while True:
+                time.sleep(3600)
         raise RuntimeError("TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID obrigatórios")
 
     if not _acquire_singleton():
         return
 
     logger.info("QUANT bot ativo (chat %s)", _allowed_chat())
-    port = _listen_port()
     http = _start_http(port) if port else None
     webhook_url = _resolve_webhook_url()
 
@@ -541,9 +555,19 @@ def run() -> None:
                 _process_update(upd)
             _save_offset(offset)
         except TelegramConflict as exc:
-            # Railway deve reconquistar o long-poll rápido se a Hetzner ainda estiver viva.
-            logger.warning("%s — retry 2s", exc)
-            time.sleep(2)
+            logger.warning("%s — tenta webhook, senão retry 20s", exc)
+            url = webhook_public_url()
+            if url:
+                try:
+                    if http is None and port:
+                        http = _start_http(port)
+                    _ensure_webhook(url)
+                    logger.info("Passou a webhook após 409: %s", url)
+                    while True:
+                        time.sleep(3600)
+                except Exception as hook_exc:
+                    logger.warning("webhook após 409 falhou: %s", hook_exc)
+            time.sleep(20)
             continue
         except Exception as exc:
             logger.exception("quant_bot loop: %s", exc)

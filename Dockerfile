@@ -74,7 +74,7 @@ RUN mkdir -p /data /data/combo5 /data/mexc_analise /data/kronos/charts /data/hug
     /app/vps/ensure_quant_bot.sh /app/vps/ensure_combo5.sh /app/vps/ensure_mexc_analise.sh \
     /app/vps/combo5_signal.py \
     /app/vps/quant_bot.py /app/vps/quant_watcher.py /app/vps/quant_hourly_news.py \
-    /app/vps/mexc_analise_bot.py 2>/dev/null || true
+    /app/vps/mexc_analise_bot.py /app/vps/wait_health.py /app/vps/container_start.sh 2>/dev/null || true
 
-# supercronic + boot Kronos (1ª execução após deploy)
-CMD ["/bin/sh", "-c", "/app/vps/railway_boot.sh & exec supercronic /app/crontab"]
+# /health no ar antes do cron — senão o healthcheck do Railway derruba todos os bots
+CMD ["/bin/sh", "/app/vps/container_start.sh"]

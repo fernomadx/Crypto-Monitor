@@ -65,6 +65,7 @@ class HttpTests(unittest.TestCase):
         from vps.quant_bot import _start_http
 
         server = _start_http(18765)
+        self.assertIsNotNone(server)
         try:
             import urllib.request
 

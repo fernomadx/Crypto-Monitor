@@ -45,6 +45,8 @@ copy vps/combo5_signal.py
 copy vps/mexc_analise.py
 copy vps/mexc_analise_bot.py
 copy vps/ensure_mexc_analise.sh
+copy vps/wait_health.py
+copy vps/container_start.sh
 copy vps/ensure_combo5.sh
 copy vps/start_quant.sh
 copy vps/install_quant_crontab.sh
