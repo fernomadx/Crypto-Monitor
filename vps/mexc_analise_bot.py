@@ -19,7 +19,9 @@ from lib.mexc_analise_bot import (  # noqa: E402
     POLL_SEC,
     SYMBOL_CCXT,
     BotState,
+    acquire_singleton_lock,
     boot_banner,
+    notify_enabled,
     tick,
 )
 from lib.mexc_contract import fetch_contract_klines, fetch_contract_ticker  # noqa: E402
@@ -95,25 +97,35 @@ def main() -> int:
         logger.info("MEXC_ANALISE_BOT=0 — daemon desligado")
         return 0
     STATE_DIR.mkdir(parents=True, exist_ok=True)
-    _emit(boot_banner())
-    state = _load_state()
-    logger.info("MEXC Análise daemon %s poll=%ss", SYMBOL_CCXT, POLL_SEC)
-    while True:
-        try:
-            state = run_once(state)
-        except Exception as exc:
-            logger.exception("ciclo: %s", exc)
-            err = f"📊 MEXC Análise\nErro\n{type(exc).__name__}: {exc}"
+    lock = acquire_singleton_lock(STATE_DIR / "bot.lock")
+    if lock is None:
+        logger.info("MEXC Análise já em execução — saindo sem Telegram")
+        return 0
+    try:
+        if notify_enabled(os.environ.get("MEXC_ANALISE_NOTIFY")):
+            _emit(boot_banner())
+        else:
+            logger.info("MEXC Análise boot silencioso (watchdog)")
+        state = _load_state()
+        logger.info("MEXC Análise daemon %s poll=%ss", SYMBOL_CCXT, POLL_SEC)
+        while True:
             try:
-                marker = STATE_DIR / "last_error_alert.txt"
-                now = time.time()
-                last = float(marker.read_text()) if marker.is_file() else 0.0
-                if now - last > 1800:
-                    _emit(err)
-                    marker.write_text(str(now))
-            except Exception:
-                pass
-        time.sleep(POLL_SEC)
+                state = run_once(state)
+            except Exception as exc:
+                logger.exception("ciclo: %s", exc)
+                err = f"📊 MEXC Análise\nErro\n{type(exc).__name__}: {exc}"
+                try:
+                    marker = STATE_DIR / "last_error_alert.txt"
+                    now = time.time()
+                    last = float(marker.read_text()) if marker.is_file() else 0.0
+                    if now - last > 1800:
+                        _emit(err)
+                        marker.write_text(str(now))
+                except Exception:
+                    pass
+            time.sleep(POLL_SEC)
+    finally:
+        lock.close()
 
 
 if __name__ == "__main__":

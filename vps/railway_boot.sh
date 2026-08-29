@@ -78,7 +78,7 @@ PY
 COMBO5_FORCE_STATUS=1 python /app/vps/combo5_signal.py >> /data/combo5.log 2>&1 || true
 
 echo "MEXC Análise: daemon alerts (15s)..."
-/app/vps/ensure_mexc_analise.sh || true
+MEXC_ANALISE_NOTIFY=1 /app/vps/ensure_mexc_analise.sh || true
 
 echo "Hetzner: desligando Kronos duplicado (one-shot)..."
 python - <<'PY' || true

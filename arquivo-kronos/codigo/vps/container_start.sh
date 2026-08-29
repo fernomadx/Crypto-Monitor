@@ -8,7 +8,7 @@ echo "start: QUANT bot"
 /app/vps/ensure_quant_bot.sh || true
 
 echo "start: MEXC Análise daemon"
-/app/vps/ensure_mexc_analise.sh || true
+MEXC_ANALISE_NOTIFY=1 /app/vps/ensure_mexc_analise.sh || true
 
 echo "start: wait /health"
 python /app/vps/wait_health.py || true

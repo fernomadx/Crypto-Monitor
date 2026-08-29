@@ -10,8 +10,10 @@ import pandas as pd
 from lib.mexc_analise_bot import (
     BotState,
     Position,
+    acquire_singleton_lock,
     boot_banner,
     evaluate_signal,
+    notify_enabled,
     tick,
 )
 
@@ -46,6 +48,28 @@ class BannerTests(unittest.TestCase):
         self.assertIn("Long: bloqueia RSI>65 ou ADX≥40", text)
         self.assertIn("1.5R (não em 1R", text)
         self.assertIn("Stop máx: 5%", text)
+
+    def test_notify_watchdog_silent(self) -> None:
+        self.assertFalse(notify_enabled("0"))
+        self.assertFalse(notify_enabled("false"))
+        self.assertFalse(notify_enabled(""))
+        self.assertTrue(notify_enabled(None))
+        self.assertTrue(notify_enabled("1"))
+
+    def test_singleton_lock_blocks_second(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "bot.lock"
+            first = acquire_singleton_lock(path)
+            self.assertIsNotNone(first)
+            second = acquire_singleton_lock(path)
+            self.assertIsNone(second)
+            first.close()
+            third = acquire_singleton_lock(path)
+            self.assertIsNotNone(third)
+            third.close()
 
 
 class SignalFilterTests(unittest.TestCase):

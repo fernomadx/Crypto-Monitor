@@ -11,9 +11,11 @@ Regras (banner de boot):
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from pathlib import Path
+from typing import Any, TextIO
 
 from lib.trade_desk.indicators import enrich
 
@@ -42,6 +44,31 @@ def boot_banner(*, mode: str = "alerts") -> str:
         "BE: stop na entrada após 1.5R (não em 1R — preserva o long de jul/26)\n"
         "Stop máx: 5% (corta short atrasado tipo 2022)"
     )
+
+
+def notify_enabled(raw: str | None) -> bool:
+    """Telegram 'Bot iniciado': default ON na execução direta; watchdog exporta 0."""
+    if raw is None:
+        return True
+    return raw.strip().lower() not in {"0", "false", "no", "off", ""}
+
+
+def acquire_singleton_lock(lock_path: Path) -> TextIO | None:
+    """Lock exclusivo do daemon. None se outra instância já segura o arquivo."""
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    fh = open(lock_path, "a+", encoding="utf-8")
+    try:
+        import fcntl
+
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        fh.close()
+        return None
+    fh.seek(0)
+    fh.truncate()
+    fh.write(str(os.getpid()))
+    fh.flush()
+    return fh
 
 
 @dataclass

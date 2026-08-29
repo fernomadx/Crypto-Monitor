@@ -1,5 +1,6 @@
 # Decisões e contexto (linha do tempo)
 
+- **MEXC Análise spam 2 min (2026-08-29)** — cron `*/2` + `ensure_mexc_analise.sh` usava `ps -ef` (não existe no python:slim, só `pgrep` estava documentado como ausente). Watchdog achava que o daemon morreu e relançava a cada 2 min; cada start mandava **Bot iniciado**. Fix: detectar via `/proc/*/cmdline`, lock exclusivo, banner só no boot (`MEXC_ANALISE_NOTIFY=1`), watchdog silencioso, `procps` no Dockerfile.
 - **MEXC Análise in-repo (2026-08)** — `/mexc` no QUANT bot + `vps/mexc_analise.py` substituem o CCXT `📊 MEXC Análise` (RequestTimeout). Futures 4h usa `Hour4` (`Min240` = code 600). Spot + funding + basis no mesmo relatório. Daemon de alerts (BTC 1h, 20x, poll 15s) no Railway.
 - **Hetzner bots parados (2026-08-27)** — `quant_bot` na VPS + Railway no mesmo `TELEGRAM_BOT_TOKEN` → Telegram 409 (getUpdates). SSH 22 no IP `204.168.179.200` timeout. Fix: webhook Telegram no Railway (`PORT` + `RAILWAY_PUBLIC_DOMAIN`) para comandos sobreviverem ao poller da VPS; `QUANT_BOT_ENABLED=0` na Hetzner; heal `scripts/hetzner-heal-bots.sh`.
 - **COMBO5 Railway state path (2026-08)** — bug: se `/data/combo5` não existia no volume, o bot caía em path efêmero e “parava” após redeploy. Fix: sempre cria `/data/combo5` + watchdog `ensure_combo5.sh` + rate-limit de erros.
