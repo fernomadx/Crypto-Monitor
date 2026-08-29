@@ -1,0 +1,106 @@
+#!/bin/sh
+# Após deploy Railway: QUANT imediato + daemon Kronos (candle 1H/4H/1D).
+set -eu
+
+echo "QUANT boot: garantindo bot..."
+/app/vps/ensure_quant_bot.sh || true
+
+echo "Kronos boot: aguardando 45s (rede + volume)..."
+sleep 45
+
+python - <<'PY' || true
+import os, sys
+sys.path.insert(0, "/app")
+try:
+    from lib.kronos_config import apply_kronos_defaults, format_boot_message
+    from lib.kronos_rules_stamp import ensure_catalog_for_current_rules
+    apply_kronos_defaults()
+    ensure_catalog_for_current_rules(notify=True)
+    from lib.telegram import send_kronos_alert
+    send_kronos_alert("Serviço iniciado", format_boot_message())
+except Exception as e:
+    print("boot telegram:", e)
+PY
+
+echo "Kronos boot: iniciando daemon (modelo em RAM, alerta no fechamento do candle)..."
+KRONOS_DAEMON_NOTIFY=1 nohup python /app/vps/kronos_daemon.py >> /data/kronos_daemon.log 2>&1 &
+echo "kronos_daemon boot pid $! (notify=1)"
+
+python - <<'PY' || true
+import os, sys
+sys.path.insert(0, "/app")
+os.environ.setdefault("QUANT_STATE_PATH", "/data/quant_state.json")
+os.environ.setdefault("QUANT_KRONOS_MODE", "veto")
+try:
+    from lib.telegram import send_quant_alert
+    from lib.quant_impact import impact_alerts_enabled
+
+    alerts_on = impact_alerts_enabled()
+    thresh = os.environ.get("QUANT_IMPACT_THRESHOLD", "0.70")
+    send_quant_alert(
+        "Online",
+        "Bot QUANT ativo no Railway.\n"
+        "Comandos: <code>/ping</code> <code>/quant</code> "
+        "<code>/combo5</code> <code>/scorecard</code> <code>/vps IP</code> "
+        "<code>/pesquisa sua pergunta</code>\n"
+        "Webhook Telegram: comandos no Railway mesmo se a Hetzner ainda pollar.\n"
+        + (
+            f"⚡ Alertas imediatos: <b>ON</b> (notícia forte ≥ {thresh})\n"
+            if alerts_on
+            else "Alertas imediatos: off (só digest 1H)\n"
+        )
+        + "<i>Canal [QUANT] separado do [KRONOS].</i>",
+    )
+except Exception as e:
+    print("quant boot telegram:", e)
+PY
+
+/app/vps/ensure_quant_bot.sh || true
+
+echo "COMBO5 boot: aviso + 1 ciclo..."
+python - <<'PY' || true
+import os, sys
+sys.path.insert(0, "/app")
+try:
+    from lib.telegram import send_combo5_alert
+    send_combo5_alert(
+        "Online (Railway)",
+        "Bot <b>COMBO5</b> ativo no Railway.\n"
+        "• Gestão SL/TP a cada <code>5 min</code>\n"
+        "• Análise automática às <code>:10</code> UTC\n"
+        "• Sob demanda: <code>/combo5</code> ou <code>/analise</code>\n"
+        "• Watchdog se ficar >75 min sem ciclo OK\n"
+        "<i>Paper — não é ordem automática.</i>",
+    )
+except Exception as e:
+    print("combo5 boot telegram:", e)
+PY
+COMBO5_FORCE_STATUS=1 python /app/vps/combo5_signal.py >> /data/combo5.log 2>&1 || true
+
+echo "MEXC Análise: daemon alerts (15s)..."
+MEXC_ANALISE_NOTIFY=1 /app/vps/ensure_mexc_analise.sh || true
+
+echo "Hetzner: desligando Kronos duplicado (one-shot)..."
+python - <<'PY' || true
+import os, sys
+sys.path.insert(0, "/app")
+flag = "/data/hetzner_kronos_disabled.flag"
+if os.path.isfile(flag):
+    print("hetzner disable: já executado")
+    raise SystemExit(0)
+host = os.environ.get("VPS_HOST", "204.168.179.200").strip()
+if not os.environ.get("VPS_SSH_PRIVATE_KEY") and not os.path.isfile("/data/vps_ssh_key"):
+    print("hetzner disable: sem VPS_SSH_PRIVATE_KEY — use Console Hetzner ou /vps test")
+    raise SystemExit(0)
+try:
+    from lib import vps_config
+    from vps.hetzner_remote import sync_and_test
+    if not vps_config.get_host():
+        vps_config.set_host(host)
+    msg = sync_and_test(host)
+    print(msg.replace("<b>", "").replace("</b>", "").replace("<code>", "").replace("</code>", ""))
+    if "✅" in msg or "OK" in msg:
+        open(flag, "w").write("ok\n")
+except Exception as exc:
+    print("hetzner disable:", exc)
+PY

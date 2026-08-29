@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Arquivo Kronos — Crypto-Monitor</title>
+  <link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+  <header>
+    <h1>📁 Arquivo Kronos + Crypto-Monitor</h1>
+    <p>Cópia de referência de todo o código e documentação · fernomadx/Crypto-Monitor</p>
+  </header>
+  <main>
+    <section>
+      <h2>Documentação</h2>
+      <div class="grid">
+        <a class="card" href="README.md"><strong>README</strong><span>Índice principal</span></a>
+        <a class="card" href="docs/01-indice-arquivos.md"><strong>Índice de arquivos</strong><span>O que cada script faz</span></a>
+        <a class="card" href="docs/02-railway.md"><strong>Railway</strong><span>Deploy, cron, env</span></a>
+        <a class="card" href="docs/03-hetzner-btccursor.md"><strong>Hetzner BTCCURSOR</strong><span>VPS + bot dedicado</span></a>
+        <a class="card" href="docs/04-scorecard-simulacao.md"><strong>Scorecard</strong><span>Limite, 10x, 4H</span></a>
+        <a class="card" href="docs/05-cron-e-telegram.md"><strong>Cron & Telegram</strong><span>Horários e alertas</span></a>
+        <a class="card" href="docs/06-comandos-uteis.md"><strong>Comandos</strong><span>Shell prontos</span></a>
+        <a class="card" href="docs/07-decisoes-e-contexto.md"><strong>Decisões</strong><span>Histórico do projeto</span></a>
+        <a class="card" href="docs/08-export-memorias.md"><strong>Memórias</strong><span>Preferências</span></a>
+      </div>
+    </section>
+
+    <section>
+      <h2>Código — lib/</h2>
+      <ul class="files" id="lib-files"></ul>
+    </section>
+
+    <section>
+      <h2>Código — vps/</h2>
+      <ul class="files" id="vps-files"></ul>
+    </section>
+
+    <section>
+      <h2>Infra & workflows</h2>
+      <ul class="files" id="infra-files"></ul>
+    </section>
+
+    <section>
+      <h2>Visualizar arquivo</h2>
+      <p style="color:var(--muted);font-size:0.9rem">Clique em um arquivo .py / .md / .sh acima ou cole o caminho:</p>
+      <input type="text" id="path-input" placeholder="codigo/vps/kronos_signal.py" style="width:100%;padding:0.6rem;background:#1e293b;border:1px solid #334155;color:#e2e8f0;border-radius:6px;" />
+      <button id="load-btn" style="margin-top:0.5rem;padding:0.5rem 1rem;background:#38bdf8;border:none;border-radius:6px;cursor:pointer;">Carregar</button>
+      <div class="viewer" style="margin-top:1rem;"><pre id="viewer">Selecione um arquivo…</pre></div>
+    </section>
+  </main>
+  <footer>
+    Atualizar cópias: <code>bash arquivo-kronos/sync-from-repo.sh</code> ·
+    <a href="https://github.com/fernomadx/Crypto-Monitor/tree/main/arquivo-kronos" style="color:#38bdf8">GitHub</a>
+  </footer>
+  <script>
+    const lib = ['kronos_tracker.py','kronos_levels.py','kronos_alignment.py','smc_strategy.py','mexc_klines.py','telegram.py','db.py'];
+    const vps = ['kronos_signal.py','kronos_scorecard.py','kronos_daily_report.py','kronos_status.py','kronos_reset_catalog.py','smc_backtest.py','railway_boot.sh','install.sh','setup_btccursor.sh','requirements.txt','requirements-railway.txt','.env.example','BTCCURSOR.md','README.md','crontab.example'];
+    const infra = ['Dockerfile','Dockerfile.kronos','crontab','crontab.kronos','railway.toml','workflows/kronos-daily-report.yml','workflows/deploy-kronos-vps.yml','workflows/kronos-telegram-cron.yml','workflows/arquivo-kronos-pages.yml'];
+
+    function list(el, base, files) {
+      files.forEach(f => {
+        const li = document.createElement('li');
+        const a = document.createElement('a');
+        const path = 'codigo/' + base + f;
+        a.href = '#';
+        a.textContent = path;
+        a.onclick = e => { e.preventDefault(); loadFile(path); };
+        li.appendChild(a);
+        el.appendChild(li);
+      });
+    }
+    list(document.getElementById('lib-files'), 'lib/', lib);
+    list(document.getElementById('vps-files'), 'vps/', vps);
+    list(document.getElementById('infra-files'), '', infra);
+
+    async function loadFile(path) {
+      const pre = document.getElementById('viewer');
+      const input = document.getElementById('path-input');
+      input.value = path;
+      pre.textContent = 'Carregando…';
+      try {
+        const r = await fetch(path);
+        if (!r.ok) throw new Error(r.status);
+        pre.textContent = await r.text();
+      } catch (e) {
+        pre.textContent = 'Erro ao carregar: ' + path + ' (' + e + ')';
+      }
+    }
+    document.getElementById('load-btn').onclick = () => loadFile(document.getElementById('path-input').value.trim());
+    document.querySelectorAll('a.card').forEach(a => {
+      if (a.getAttribute('href').endsWith('.md')) {
+        a.onclick = e => { e.preventDefault(); loadFile(a.getAttribute('href')); };
+      }
+    });
+  </script>
+</body>
+</html>

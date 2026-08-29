@@ -1,0 +1,10 @@
+# Kronos service no Railway — mesmas libs do monitor + ML
+requests==2.31.0
+numpy
+pandas>=2.2.0
+torch>=2.0.0
+einops==0.8.1
+huggingface_hub>=0.33.0
+safetensors>=0.6.0
+tqdm>=4.67.0
+matplotlib>=3.8.0

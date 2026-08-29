@@ -1,0 +1,47 @@
+name: Disable Kronos on VPS
+
+on:
+  workflow_dispatch:
+    inputs:
+      vps_host:
+        description: "IPv4 Hetzner (opcional se secret VPS_HOST existir)"
+        required: false
+        type: string
+  push:
+    branches: [main]
+    paths:
+      - vps/hetzner_disable_kronos.sh
+      - .github/workflows/deploy-kronos-vps.yml
+
+jobs:
+  disable:
+    runs-on: ubuntu-latest
+    environment: "faithful-determination / production"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Disable Kronos via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ github.event.inputs.vps_host || secrets.VPS_HOST || '204.168.179.200' }}
+          username: ${{ secrets.VPS_USER || 'root' }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script_stop: true
+          script: |
+            set -e
+            export REPO_DIR=/opt/crypto-monitor
+            if [ -d "$REPO_DIR/.git" ]; then
+              cd "$REPO_DIR" && git pull origin main
+              chmod +x vps/hetzner_disable_kronos.sh vps/hetzner_test.sh
+              bash vps/hetzner_disable_kronos.sh
+              bash vps/hetzner_test.sh
+            else
+              curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/vps/hetzner_disable_kronos.sh | bash
+            fi
+
+      - name: SSH key missing
+        if: failure()
+        run: |
+          echo "::error::SSH falhou — configure VPS_SSH_KEY no environment production ou rode na Console Hetzner:"
+          echo "curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/vps/hetzner_disable_kronos.sh | sudo bash"

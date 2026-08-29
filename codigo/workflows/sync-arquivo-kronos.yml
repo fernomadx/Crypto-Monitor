@@ -1,0 +1,48 @@
+# Mantém arquivo-kronos/codigo/ sincronizado com o repo principal.
+# Dispara o deploy Pages quando houver mudanças em arquivo-kronos/.
+
+name: Sync arquivo-kronos
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'lib/**'
+      - 'vps/**'
+      - 'Dockerfile'
+      - 'Dockerfile.kronos'
+      - 'crontab'
+      - 'crontab.kronos'
+      - 'railway.toml'
+      - 'README.md'
+      - '.env.example'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-arquivo-kronos
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sincronizar codigo/
+        run: bash arquivo-kronos/sync-from-repo.sh
+
+      - name: Commit e push se mudou
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add arquivo-kronos/codigo/
+          if git diff --staged --quiet; then
+            echo "Nada a atualizar em arquivo-kronos/codigo/"
+          else
+            git commit -m "chore: sync arquivo-kronos [automático]"
+            git push
+          fi
