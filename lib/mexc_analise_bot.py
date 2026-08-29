@@ -11,9 +11,11 @@ Regras (banner de boot):
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from pathlib import Path
+from typing import Any, TextIO
 
 from lib.trade_desk.indicators import enrich
 
@@ -42,6 +44,31 @@ def boot_banner(*, mode: str = "alerts") -> str:
         "BE: stop na entrada após 1.5R (não em 1R — preserva o long de jul/26)\n"
         "Stop máx: 5% (corta short atrasado tipo 2022)"
     )
+
+
+def notify_enabled(raw: str | None) -> bool:
+    """Telegram 'Bot iniciado': default ON na execução direta; watchdog exporta 0."""
+    if raw is None:
+        return True
+    return raw.strip().lower() not in {"0", "false", "no", "off", ""}
+
+
+def acquire_singleton_lock(lock_path: Path) -> TextIO | None:
+    """Lock exclusivo do daemon. None se outra instância já segura o arquivo."""
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    fh = open(lock_path, "a+", encoding="utf-8")
+    try:
+        import fcntl
+
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        fh.close()
+        return None
+    fh.seek(0)
+    fh.truncate()
+    fh.write(str(os.getpid()))
+    fh.flush()
+    return fh
 
 
 @dataclass
@@ -200,6 +227,38 @@ def _fmt(v: float) -> str:
     return f"{v:,.4f}"
 
 
+def side_action(side: str) -> str:
+    """LONG = compra, SHORT = venda."""
+    key = (side or "").upper()
+    if key == "LONG":
+        return "COMPRA"
+    if key == "SHORT":
+        return "VENDA"
+    return side
+
+
+def format_signal_alert(
+    *,
+    side: str,
+    limit: float,
+    stop: float,
+    take: float,
+    rsi: float | None,
+    adx: float | None,
+) -> str:
+    action = side_action(side)
+    rsi_s = f"RSI {rsi:.0f}" if rsi is not None else ""
+    adx_s = f"ADX {adx:.0f}" if adx is not None else ""
+    return (
+        "📊 MEXC Análise\n"
+        f"SINAL {action} ({side})\n"
+        "limit, sem fill ainda — não é ordem na exchange\n"
+        f"{SYMBOL_CCXT} {INTERVAL}\n"
+        f"Entry {_fmt(limit)} · SL {_fmt(stop)} · TP {_fmt(take)}\n"
+        f"Lev {LEVERAGE}x · {rsi_s} {adx_s}".rstrip()
+    )
+
+
 def tick(
     *,
     state: BotState,
@@ -228,7 +287,7 @@ def tick(
                 state = replace(state, position=pos)
                 msgs.append(
                     "📊 MEXC Análise\n"
-                    f"FILL {pos.side}\n"
+                    f"FILL {side_action(pos.side)} ({pos.side})\n"
                     f"{SYMBOL_CCXT} {INTERVAL}\n"
                     f"Entry limit {_fmt(pos.entry)} · SL {_fmt(pos.stop)} · TP {_fmt(pos.take)}\n"
                     f"Lev {LEVERAGE}x"
@@ -259,7 +318,7 @@ def tick(
             )
             msgs.append(
                 "📊 MEXC Análise\n"
-                f"STOP {pos.side}\n"
+                f"STOP {side_action(pos.side)} ({pos.side})\n"
                 f"Preço {_fmt(pos.stop)} · cooldown {COOLDOWN_HOURS}h (sem inverter)"
             )
             return state, msgs
@@ -267,7 +326,7 @@ def tick(
             state = replace(state, position=None, cooldown_until=None)
             msgs.append(
                 "📊 MEXC Análise\n"
-                f"TAKE {pos.side}\n"
+                f"TAKE {side_action(pos.side)} ({pos.side})\n"
                 f"Alvo {_fmt(pos.take)} · flat"
             )
             return state, msgs
@@ -308,13 +367,14 @@ def tick(
         candle=candle_id,
     )
     state = replace(state, position=pos, last_stop_side=None)
-    rsi_s = f"RSI {sig['rsi']:.0f}" if sig.get("rsi") is not None else ""
-    adx_s = f"ADX {sig['adx']:.0f}" if sig.get("adx") is not None else ""
     msgs.append(
-        "📊 MEXC Análise\n"
-        f"SINAL {side} (limit, sem fill ainda)\n"
-        f"{SYMBOL_CCXT} {INTERVAL}\n"
-        f"Entry {_fmt(limit)} · SL {_fmt(stop)} · TP {_fmt(take)}\n"
-        f"Lev {LEVERAGE}x · {rsi_s} {adx_s}".rstrip()
+        format_signal_alert(
+            side=side,
+            limit=limit,
+            stop=stop,
+            take=take,
+            rsi=sig.get("rsi"),
+            adx=sig.get("adx"),
+        )
     )
     return state, msgs

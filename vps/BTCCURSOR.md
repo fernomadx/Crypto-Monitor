@@ -171,7 +171,7 @@ O bot que manda **Bot iniciado** (alerts · BTC/USDT:USDT 1h · 20x · poll 15s)
 
 - Sobe no **Railway** com o container (`ensure_mexc_analise.sh`)
 - Snapshot sob demanda: `/mexc` ou `python vps/mexc_analise.py BTC`
-- **Modo alerts** — não envia ordem na exchange (MEXC key continua read-only)
+- **Modo alerts** — Telegram no sinal **COMPRA (LONG)** / **VENDA (SHORT)** no fechamento do candle 1h, depois FILL / BE / STOP / TAKE. **Não envia ordem** na exchange (MEXC key continua read-only)
 
 Regras iguais ao banner antigo: cooldown 12h pós-STOP sem inverter, long bloqueado RSI>65 ou ADX≥40, BE em **1.5R** (não 1R), stop máx 5% no short.
 
