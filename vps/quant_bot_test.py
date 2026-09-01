@@ -58,6 +58,43 @@ class DispatchTests(unittest.TestCase):
                 body = _dispatch("/ping")
         self.assertIn("QUANT online", body)
         self.assertIn("/combo5", body)
+        self.assertIn("/c5score", body)
+
+
+class Combo5RankingDispatchTests(unittest.TestCase):
+    def test_help_mentions_combo5_ranking(self) -> None:
+        help_text = _dispatch("/help")
+        self.assertIn("/combo5 ranking", help_text)
+        self.assertIn("/c5score", help_text)
+
+    def test_combo5_ranking_does_not_call_analyze(self) -> None:
+        ranking = "📊 Ranking COMBO5 (paper)\nTudo: ainda sem trades fechados"
+        fake = mock.MagicMock()
+        fake.ranking_now.return_value = ranking
+        fake.analyze_now.side_effect = AssertionError("analyze_now não deve rodar")
+        with mock.patch.dict(sys.modules, {"vps.combo5_signal": fake}):
+            for cmd in (
+                "/combo5 ranking",
+                "/combo5 rank",
+                "/combo5 performance",
+                "/c5score",
+                "/combo5ranking",
+            ):
+                with self.subTest(cmd=cmd):
+                    fake.analyze_now.reset_mock()
+                    body = _dispatch(cmd)
+                    fake.analyze_now.assert_not_called()
+                    self.assertIn("Ranking COMBO5", body)
+                    self.assertIn("[COMBO5]", body)
+
+    def test_combo5_ticker_still_analyzes(self) -> None:
+        fake = mock.MagicMock()
+        fake.analyze_now.return_value = "análise BTCUSDT"
+        fake.ranking_now.side_effect = AssertionError("ranking_now não deve rodar")
+        with mock.patch.dict(sys.modules, {"vps.combo5_signal": fake}):
+            body = _dispatch("/combo5 BTC")
+        fake.analyze_now.assert_called_once_with("BTC")
+        self.assertIn("análise BTCUSDT", body)
 
 
 class HttpTests(unittest.TestCase):

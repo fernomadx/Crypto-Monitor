@@ -62,5 +62,5 @@ echo "==> 4/4 Uma varredura de notícias agora"
 "$PY" vps/quant_watcher.py || true
 
 echo ""
-echo "QUANT ativo. Telegram: /ping /quant /combo5 /pesquisa <texto>"
+echo "QUANT ativo. Telegram: /ping /quant /combo5 /combo5 ranking /c5score /pesquisa <texto>"
 echo "Modo Kronos: $QUANT_KRONOS_MODE"
