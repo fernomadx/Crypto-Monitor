@@ -38,10 +38,12 @@
 # Kronos: relatório diário no Telegram — 12:00 horário de Brasília (15:00 UTC)
 0 15 * * * python /app/vps/kronos_daily_report.py >> /data/kronos_daily_report.log 2>&1
 
-# COMBO5: gestão SL/TP/entrada (silencioso se HOLD)
+# COMBO5: gestão SL/TP/entrada (silencioso se HOLD) — só Railway, não duplicar na Hetzner
 */5 * * * * python /app/vps/combo5_signal.py >> /data/combo5.log 2>&1
 # COMBO5: análise horária no Telegram (~junto do Kronos 1H, após :08)
 10 * * * * /bin/sh -c 'COMBO5_FORCE_STATUS=1 python /app/vps/combo5_signal.py' >> /data/combo5.log 2>&1
+# COMBO5: ranking de performance diário — 12:10 horário de Brasília (15:10 UTC)
+10 15 * * * python /app/vps/combo5_scorecard.py >> /data/combo5_scorecard.log 2>&1
 # COMBO5: watchdog se ficar >75 min sem ciclo OK
 */15 * * * * /app/vps/ensure_combo5.sh >> /data/combo5.log 2>&1
 

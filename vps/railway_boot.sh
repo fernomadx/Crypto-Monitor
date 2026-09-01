@@ -65,12 +65,13 @@ try:
     from lib.telegram import send_combo5_alert
     send_combo5_alert(
         "Online (Railway)",
-        "Bot <b>COMBO5</b> ativo no Railway.\n"
-        "• Gestão SL/TP a cada <code>5 min</code>\n"
-        "• Análise automática às <code>:10</code> UTC\n"
-        "• Sob demanda: <code>/combo5</code> ou <code>/analise</code>\n"
+        "Bot <b>COMBO5</b> ativo no Railway (paper).\n"
+        "• Alerta de <b>entrada</b> e <b>saída</b> no Telegram\n"
+        "• Ranking após cada fechamento + diário às <code>15:10</code> UTC\n"
+        "• Gestão SL/TP a cada <code>5 min</code> · análise às <code>:10</code> UTC\n"
+        "• Sob demanda: <code>/combo5</code> · <code>/combo5 ranking</code> · <code>/c5score</code>\n"
         "• Watchdog se ficar >75 min sem ciclo OK\n"
-        "<i>Paper — não é ordem automática.</i>",
+        "<i>Só neste container — não duplicar cron na Hetzner.</i>"
     )
 except Exception as e:
     print("combo5 boot telegram:", e)

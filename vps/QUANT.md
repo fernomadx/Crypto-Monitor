@@ -93,6 +93,8 @@ O `kronos_signal.py` já inclui bloco **Contexto QUANT** e veto no scorecard 4H
 /combo5         — análise COMBO5 ao vivo (fora do cron 5 min / horário)
 /analise        — alias de /combo5
 /combo5 BTC     — força o par (ex.: ETH, SOL)
+/combo5 ranking — ranking paper (7d / 30d / pares) — não trata "ranking" como ticker
+/c5score        — atalho do ranking COMBO5
 /mexc           — 📊 MEXC Análise snapshot (spot + futuros + funding)
 /mexc BTC       — mesmo, forçando o par
 Daemon 📊 MEXC Análise (alerts, BTC 1h, 20x, poll 15s) sobe no boot do Railway.

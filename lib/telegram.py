@@ -80,33 +80,46 @@ def send_alert(title: str, body: str, emoji: str = "🔔") -> bool:
 
 def send_combo5_alert(title: str, body: str) -> bool:
     """
-    Alerta COMBO5 (entrada/saída numerada) — mesmo canal Kronos se disponível.
-    Prefixo [COMBO5].
+    Alerta COMBO5 (entrada/saída + ranking). Prefixo [COMBO5].
+    Tenta KRONOS_TELEGRAM_* e, se for outro bot e falhar, TELEGRAM_* do Railway.
     """
     text = (
         f"🎯 <b>[COMBO5]</b> {title}\n\n{body}\n\n"
         "<i>Paper/sinal COMBO5 — não é ordem automática na exchange. "
         "Confirme stop/alvo antes de operar.</i>"
     )
+    channels: list[tuple[str, str, str]] = []
     try:
-        _, chat_id, base_url = _kronos_telegram_config()
-        resp = requests.post(
-            f"{base_url}/sendMessage",
-            json={
-                "chat_id": chat_id,
-                "text": text,
-                "parse_mode": "HTML",
-                "disable_web_page_preview": True,
-            },
-            timeout=10,
-        )
-        if not resp.ok:
-            logger.error("COMBO5 Telegram error %s: %s", resp.status_code, resp.text[:200])
-            return False
-        return True
-    except Exception as exc:
-        logger.error("COMBO5 Telegram send failed: %s", exc)
+        channels.append(_kronos_telegram_config())
+    except RuntimeError as exc:
+        logger.error("COMBO5 Telegram config: %s", exc)
+    try:
+        main = _telegram_config()
+        if not channels or main != channels[0]:
+            channels.append(main)
+    except RuntimeError:
+        pass
+    if not channels:
+        logger.error("COMBO5 Telegram send failed: sem token/chat")
         return False
+    for _token, chat_id, base_url in channels:
+        try:
+            resp = requests.post(
+                f"{base_url}/sendMessage",
+                json={
+                    "chat_id": chat_id,
+                    "text": text,
+                    "parse_mode": "HTML",
+                    "disable_web_page_preview": True,
+                },
+                timeout=10,
+            )
+            if resp.ok:
+                return True
+            logger.error("COMBO5 Telegram error %s: %s", resp.status_code, resp.text[:200])
+        except Exception as exc:
+            logger.error("COMBO5 Telegram send failed: %s", exc)
+    return False
 
 
 def send_kronos_alert(title: str, body: str) -> bool:

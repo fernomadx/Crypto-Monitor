@@ -6,6 +6,8 @@ Comandos (só responde TELEGRAM_CHAT_ID autorizado):
   /quant, /contexto     — estado atual (notícias de impacto)
   /pesquisa <pergunta>  — consulta LLMQuant + Haiku
   /combo5, /analise     — análise COMBO5 ao vivo (fora do cron)
+  /combo5 ranking       — ranking paper COMBO5 (7d/30d)
+  /c5score              — atalho do ranking COMBO5
   /mexc                 — 📊 MEXC Análise (spot + futuros, sem CCXT)
   /btc /eth /sol        — snapshot mercado + contexto
   /scorecard            — acerto Kronos (simulação 4H)
@@ -44,6 +46,17 @@ OFFSET_PATH = Path(os.environ.get("QUANT_BOT_OFFSET", "/data/quant_bot_offset.tx
 SINGLETON_LOCK = Path(os.environ.get("QUANT_BOT_LOCK", "/data/quant_bot.lock"))
 POLL_SEC = int(os.environ.get("QUANT_BOT_POLL_SEC", "2"))
 _singleton_fp = None
+COMBO5_RANKING_SUBCOMMANDS = frozenset(
+    {
+        "ranking",
+        "rank",
+        "score",
+        "scorecard",
+        "performance",
+        "perf",
+        "desempenho",
+    }
+)
 
 
 def _enabled() -> bool:
@@ -209,6 +222,7 @@ def _help_text() -> str:
         "/pesquisa &lt;pergunta&gt; — pesquisa Quant Wiki + papers\n"
         "/combo5 ou /analise — análise COMBO5 <b>agora</b> (fora do cron)\n"
         "/combo5 BTC — mesmo, forçando o par\n"
+        "/combo5 ranking ou /c5score — ranking paper (entrada/saída 7d/30d)\n"
         "/mexc — 📊 MEXC Análise (spot + futuros + funding)\n"
         "/mexc BTC — mesmo, forçando o par\n"
         "/btc · /eth · /sol — preço + contexto\n"
@@ -238,8 +252,36 @@ def _handle_mexc(args: str) -> str:
         return f"⚠️ Falha na MEXC Análise: {exc}"
 
 
+def _combo5_ranking_request(args: str) -> bool:
+    first = args.strip().split()[0].lower() if args.strip() else ""
+    return first in COMBO5_RANKING_SUBCOMMANDS
+
+
+def _combo5_pre(heading: str, body: str) -> str:
+    plain = (
+        body.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+    return f"🎯 <b>[COMBO5]</b> {heading}\n\n<pre>{plain}</pre>"
+
+
+def _handle_combo5_ranking() -> str:
+    from vps.combo5_signal import ranking_now
+
+    try:
+        body = ranking_now()
+    except Exception as exc:
+        logger.exception("combo5 ranking: %s", exc)
+        return f"⚠️ Falha no ranking COMBO5: {exc}"
+    return _combo5_pre("ranking", body)
+
+
 def _handle_combo5(args: str) -> str:
     """Análise COMBO5 sob demanda — mesmo motor do cron 5 min / horário."""
+    if _combo5_ranking_request(args):
+        return _handle_combo5_ranking()
+
     from vps.combo5_signal import analyze_now
 
     try:
@@ -247,12 +289,7 @@ def _handle_combo5(args: str) -> str:
     except Exception as exc:
         logger.exception("combo5 on-demand: %s", exc)
         return f"⚠️ Falha na análise COMBO5: {exc}"
-    plain = (
-        body.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
-    return f"🎯 <b>[COMBO5]</b> sob demanda\n\n<pre>{plain}</pre>"
+    return _combo5_pre("sob demanda", body)
 
 
 def _handle_scorecard(args: str) -> str:
@@ -367,13 +404,15 @@ def _dispatch(text: str) -> str:
         return (
             f"<b>QUANT online</b>\n{api}\n{alerts}\n"
             f"Modo Kronos: <code>{os.environ.get('QUANT_KRONOS_MODE', 'warn')}</code>\n"
-            f"COMBO5: <code>/combo5</code> ou <code>/analise</code>\n"
+            f"COMBO5: <code>/combo5</code> · <code>/combo5 ranking</code> · <code>/c5score</code>\n"
             f"MEXC: <code>/mexc</code>"
         )
     if cmd in ("/quant", "/contexto"):
         return _handle_context()
     if cmd in ("/combo5", "/analise", "/análise", "/c5"):
         return _handle_combo5(rest)
+    if cmd in ("/c5score", "/combo5ranking", "/c5ranking"):
+        return _handle_combo5_ranking()
     if cmd in ("/mexc", "/mexcanálise", "/mexc_analise"):
         return _handle_mexc(rest)
     if cmd in ("/pesquisa", "/research", "/p"):
@@ -413,10 +452,15 @@ def _process_update(upd: dict) -> None:
             "⏳ Calculando scorecard Kronos (consulta MEXC + catálogo)…",
         )
     elif cmd in ("/combo5", "/analise", "/análise", "/c5"):
-        send_quant_reply(
-            chat_id,
-            "⏳ Analisando COMBO5 ao vivo (candles MEXC + Kronos 3TF)…",
-        )
+        if _combo5_ranking_request(rest):
+            send_quant_reply(chat_id, "⏳ Montando ranking COMBO5…")
+        else:
+            send_quant_reply(
+                chat_id,
+                "⏳ Analisando COMBO5 ao vivo (candles MEXC + Kronos 3TF)…",
+            )
+    elif cmd in ("/c5score", "/combo5ranking", "/c5ranking"):
+        send_quant_reply(chat_id, "⏳ Montando ranking COMBO5…")
     elif cmd in ("/mexc", "/mexcanálise", "/mexc_analise"):
         send_quant_reply(
             chat_id,

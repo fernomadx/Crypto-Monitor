@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
+from collections import defaultdict
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -163,6 +164,8 @@ class TradeJournal:
         del self.state.open_trades[symbol]
         self.state.closed_trades.append(trade)
         msg = format_exit_alert(trade, now.strftime("%d/%m/%Y %H:%M UTC"))
+        ranking = format_performance_ranking(self.state, now=now)
+        msg = f"{msg}\n\n{ranking}"
         self._alert(msg)
         return trade, msg
 
@@ -261,3 +264,109 @@ def explain_outcome(
         parts.append("Contexto na saída: " + "; ".join(market_notes))
     parts.append("Lembrete do setup de entrada: " + ("; ".join(trade.entry_reasons[:3]) or "COMBO5"))
     return " ".join(parts)
+
+
+def _as_utc(iso: str | None) -> datetime | None:
+    if not iso:
+        return None
+    dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _closed_in_window(
+    closed: list[NumberedTrade],
+    *,
+    days: int | None,
+    now: datetime,
+) -> list[NumberedTrade]:
+    if days is None:
+        return list(closed)
+    cutoff = now - timedelta(days=days)
+    out: list[NumberedTrade] = []
+    for trade in closed:
+        closed_at = _as_utc(trade.closed_at)
+        if closed_at is None or closed_at >= cutoff:
+            out.append(trade)
+    return out
+
+
+def _summarize(trades: list[NumberedTrade]) -> tuple[int, int, int, int, float, float]:
+    gains = sum(1 for t in trades if t.result == "GAIN")
+    losses = sum(1 for t in trades if t.result == "LOSS")
+    breakeven = sum(1 for t in trades if t.result == "BREAKEVEN")
+    pnl = sum(float(t.pnl_abs or 0) for t in trades)
+    pcts = [float(t.pnl_pct) for t in trades if t.pnl_pct is not None]
+    avg_pct = (sum(pcts) / len(pcts)) if pcts else 0.0
+    return len(trades), gains, losses, breakeven, pnl, avg_pct
+
+
+def _window_line(label: str, trades: list[NumberedTrade]) -> str:
+    n, gains, losses, breakeven, pnl, avg_pct = _summarize(trades)
+    if n == 0:
+        return f"{label}: ainda sem trades fechados"
+    win_rate = 100.0 * gains / n
+    return (
+        f"{label}: {n} fecha. · {win_rate:.0f}% win "
+        f"({gains}G/{losses}L/{breakeven}BE) · "
+        f"PnL {pnl:+.2f} USDT · média {avg_pct:+.2f}%"
+    )
+
+
+def format_performance_ranking(
+    state: JournalState,
+    *,
+    now: datetime | None = None,
+) -> str:
+    """Ranking paper COMBO5: 7d / 30d / tudo, por par, últimos fechamentos."""
+    now = now or datetime.now(timezone.utc)
+    closed = list(state.closed_trades)
+    open_n = len(state.open_trades)
+    lines = [
+        "📊 Ranking COMBO5 (paper)",
+        f"Atualizado {now.strftime('%d/%m/%Y %H:%M UTC')}",
+        f"Abertos agora: {open_n} · próximo nº {state.next_number}",
+        "",
+        _window_line("7 dias", _closed_in_window(closed, days=7, now=now)),
+        _window_line("30 dias", _closed_in_window(closed, days=30, now=now)),
+        _window_line("Tudo", _closed_in_window(closed, days=None, now=now)),
+    ]
+
+    by_symbol: dict[str, list[NumberedTrade]] = defaultdict(list)
+    for trade in closed:
+        by_symbol[trade.symbol].append(trade)
+    if by_symbol:
+        lines.append("")
+        lines.append("Por par (tudo):")
+        ranked = sorted(
+            by_symbol.items(),
+            key=lambda item: sum(float(t.pnl_abs or 0) for t in item[1]),
+            reverse=True,
+        )
+        for symbol, trades in ranked:
+            n, gains, _losses, _be, pnl, _avg = _summarize(trades)
+            win_rate = 100.0 * gains / n if n else 0.0
+            lines.append(f"  {symbol}: {n} · {win_rate:.0f}% · {pnl:+.2f} USDT")
+
+    if state.open_trades:
+        lines.append("")
+        lines.append("Posições abertas:")
+        for trade in state.open_trades.values():
+            lines.append(
+                f"  Nº {trade.number} {trade.symbol} {trade.side} @ {trade.entry_price:.4f} "
+                f"SL {trade.stop_loss:.4f} TP {trade.take_profit:.4f}"
+            )
+
+    recent = closed[-8:]
+    if recent:
+        lines.append("")
+        lines.append("Últimos fechamentos:")
+        for trade in reversed(recent):
+            result = trade.result or "?"
+            pnl_pct = f"{trade.pnl_pct:+.2f}%" if trade.pnl_pct is not None else "n/d"
+            lines.append(f"  Nº {trade.number} {trade.symbol} {trade.side} {result} {pnl_pct}")
+
+    lines.append("")
+    lines.append("Paper/sinal — não é ordem na exchange.")
+    return "\n".join(lines)

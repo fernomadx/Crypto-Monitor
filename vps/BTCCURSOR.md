@@ -109,21 +109,16 @@ Actions → **Deploy Kronos to VPS** → **Run workflow**
 | | Railway | Hetzner BTCCURSOR |
 |--|---------|-------------------|
 | Kronos | **Ativo** (daemon + crontab) | **Desligado** (`hetzner_disable_kronos.sh`) |
-| COMBO5 | opcional no container | **Ativo** — `scripts/hetzner-deploy-combo5.sh` |
-| Bot | `TELEGRAM_*` | QUANT + `/combo5`; Kronos só com `KRONOS_TELEGRAM_*` dedicado |
+| COMBO5 | **Ativo** — entrada/saída + ranking | **Não duplicar** (sem cron COMBO5) |
+| Bot | `TELEGRAM_*` · `/combo5` · `/c5score` | QUANT off (`QUANT_BOT_ENABLED=0`) |
 | DB | `/data/crypto_monitor.db` | `/opt/crypto-monitor/data/kronos_vps.db` |
-| Cron | no container | COMBO5 5 min + `:10`; sem linhas `kronos_*` |
+| Cron | COMBO5 5 min + `:10` + ranking 15:10 UTC | sem linhas `kronos_*` / `combo5_*` |
 
-### COMBO5 na Hetzner (alertas) + comandos no Railway
+### COMBO5 no Railway (não duplicar na Hetzner)
 
-A VPS envia `[COMBO5]` (cron 5 min + `:10` UTC). **Não** rode `quant_bot` aqui: o mesmo `TELEGRAM_BOT_TOKEN` no Railway já faz `getUpdates`. Dois pollers geram **Telegram 409** e `/ping` `/combo5` param.
+Alertas `[COMBO5]` (entrada, saída e ranking) saem **só do Railway**. Cron COMBO5 na VPS duplicaria avisos no mesmo chat.
 
-```bash
-# Reativar COMBO5 + matar quant_bot duplicado
-curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/scripts/hetzner-heal-bots.sh | sudo bash
-```
-
-Telegram: `/combo5` · `/analise` · `/c5` · `/mexc` (respondidos pelo Railway). Alertas `[COMBO5]` saem da Hetzner.
+Comandos no Telegram (Railway): `/combo5` · `/combo5 ranking` · `/c5score` · `/analise` · `/c5` · `/mexc`.
 
 Desligar Kronos na Hetzner:
 
