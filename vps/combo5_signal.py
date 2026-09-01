@@ -7,11 +7,13 @@ Cron sugerido (a cada 5 min):
 
 Avisos Telegram:
   - ENTRADA Nº N · data/hora · stop · alvo · motivos
-  - FECHAMENTO Nº N · GAIN/LOSS · explicação
+  - FECHAMENTO Nº N · GAIN/LOSS · explicação + ranking
+  - ranking diário (cron) e /combo5 ranking
 """
 
 from __future__ import annotations
 
+import html
 import json
 import logging
 import os
@@ -22,7 +24,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from lib.combo5.journal import TradeJournal  # noqa: E402
+from lib.combo5.journal import TradeJournal, format_performance_ranking  # noqa: E402
 from lib.combo5.signal import Combo5Signal, evaluate_combo5  # noqa: E402
 from lib.mexc_klines import fetch_klines  # noqa: E402
 from lib.telegram import send_combo5_alert  # noqa: E402
@@ -107,11 +109,12 @@ def _signal_exit(trade, signal: Combo5Signal) -> tuple[bool, list[str]]:
     return False, notes
 
 
-def _emit(msg: str) -> None:
+def _emit(msg: str, *, title: str = "COMBO5") -> None:
     print(msg, flush=True)
-    # Telegram sem HTML pesado — texto puro
-    plain = msg.replace("<", "&lt;").replace(">", "&gt;")
-    send_combo5_alert("COMBO5", f"<pre>{plain}</pre>")
+    plain = html.escape(msg)
+    ok = send_combo5_alert(title, f"<pre>{plain}</pre>")
+    if not ok:
+        logger.error("COMBO5 Telegram não entregou: %s", title)
 
 
 def _should_send_heartbeat(state_dir: Path) -> bool:
@@ -253,6 +256,12 @@ def _normalize_symbol(raw: str) -> str:
     return t if t.endswith("USDT") else f"{t}USDT"
 
 
+def ranking_now() -> str:
+    """Ranking paper do journal persistido — sem novo ciclo de mercado."""
+    _state_dir, journal, _symbols = _runtime()
+    return format_performance_ranking(journal.state)
+
+
 def analyze_now(symbol: str | None = None) -> str:
     """
     Análise COMBO5 em tempo real (comando Telegram /combo5 · /analise).
@@ -348,7 +357,7 @@ def process_symbol(symbol: str, journal: TradeJournal, state_dir: Path) -> dict:
             closed, alert = journal.close_trade(
                 symbol=symbol, exit_price=exit_px, exit_reason=reason, market_notes=notes
             )
-            _emit(alert)
+            _emit(alert, title=f"FECHAMENTO Nº {closed.number} {closed.result}")
             actions.append(f"closed #{closed.number} {closed.result}")
             open_t = None
 
@@ -372,7 +381,7 @@ def process_symbol(symbol: str, journal: TradeJournal, state_dir: Path) -> dict:
             strength_pct=float(signal.strength_pct),
             confidence=float(signal.confidence),
         )
-        _emit(alert)
+        _emit(alert, title=f"ENTRADA Nº {opened.number}")
         actions.append(f"opened #{opened.number} {opened.side}")
 
     status = {
@@ -392,6 +401,9 @@ def process_symbol(symbol: str, journal: TradeJournal, state_dir: Path) -> dict:
 
 def main() -> None:
     _load_env()
+    if "--ranking" in sys.argv:
+        _emit(ranking_now(), title="RANKING")
+        return
     if os.environ.get("COMBO5_ENABLED", "1").strip().lower() not in {"1", "true", "yes", "on"}:
         logger.info("COMBO5_ENABLED=0 — saindo")
         return
