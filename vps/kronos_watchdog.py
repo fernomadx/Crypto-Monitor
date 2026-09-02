@@ -12,7 +12,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from lib.kronos_config import RULES_VERSION, apply_v31_defaults  # noqa: E402
+from lib.kronos_config import RULES_VERSION, apply_v31_defaults, require_railway_or_exit  # noqa: E402
 
 apply_v31_defaults()
 
@@ -37,6 +37,7 @@ def _send_watchdog(body: str) -> None:
 
 
 def main() -> None:
+    require_railway_or_exit()
     if _recently_alerted():
         return
 

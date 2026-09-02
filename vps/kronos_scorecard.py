@@ -12,7 +12,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from lib.kronos_config import apply_v31_defaults  # noqa: E402
+from lib.kronos_config import apply_v31_defaults, require_railway_or_exit  # noqa: E402
 
 apply_v31_defaults()
 
@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 def run(force_report: bool = False) -> None:
+    require_railway_or_exit()
     new_trades = score_mature_predictions()
     short_closed = [t for t in new_trades if t.get("horizon") == "short"]
     now = datetime.now(timezone.utc)
