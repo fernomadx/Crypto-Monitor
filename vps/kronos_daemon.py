@@ -19,9 +19,15 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from lib.kronos_config import RULES_VERSION, apply_v31_defaults, format_config_footer  # noqa: E402
+from lib.kronos_config import (  # noqa: E402
+    RULES_VERSION,
+    apply_v31_defaults,
+    format_config_footer,
+    require_railway_or_exit,
+)
 from lib.kronos_rules_stamp import check_and_update  # noqa: E402
 
+require_railway_or_exit()
 apply_v31_defaults()
 check_and_update(notify=True)
 
@@ -124,6 +130,7 @@ def on_candle_close(predictor, wake_at: datetime) -> None:
 
 
 def main() -> None:
+    require_railway_or_exit()
     if not _acquire_singleton():
         return
 
@@ -156,7 +163,6 @@ def main() -> None:
             err_stamp = Path(os.environ.get("KRONOS_LAST_ERROR_STAMP", "/data/kronos_last_error.txt"))
             err_msg = str(exc)[:500]
             last_msg = err_stamp.read_text().strip() if err_stamp.exists() else ""
-            # Evita spam do mesmo erro a cada hora
             if err_msg != last_msg:
                 try:
                     send_kronos_alert("Erro daemon", err_msg)
