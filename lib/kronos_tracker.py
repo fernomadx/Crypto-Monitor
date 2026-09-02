@@ -1,1 +1,1 @@
-PLACEHOLDER_KRONOS
+LOAD_FROM_DISK:/tmp/Crypto-Monitor/lib/kronos_tracker.py

@@ -1,1 +1,1 @@
-PLACEHOLDER_QUANT
+LOAD_FROM_DISK:/tmp/Crypto-Monitor/vps/quant_bot.py
