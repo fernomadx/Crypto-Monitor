@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 # Teste de saúde BTCCURSOR (Hetzner) — rode na VPS:
 #   cd /opt/crypto-monitor && sudo bash vps/hetzner_test.sh
-# Opções:
-#   --signal   roda uma previsão Kronos (demora ~2–10 min)
-#   --score    envia scorecard ao Telegram
+# --signal / --score recusados: Kronos só no Railway.
 set -euo pipefail
 
 REPO_DIR="${REPO_DIR:-/opt/crypto-monitor}"
@@ -30,7 +28,6 @@ ok() { echo "  ✅ $1"; }
 warn() { echo "  ⚠️  $1"; fail=$((fail + 1)); }
 bad() { echo "  ❌ $1"; fail=$((fail + 1)); }
 
-# .env
 if [ -f "$REPO_DIR/vps/.env" ]; then
   ok ".env presente"
   set -a
@@ -51,15 +48,13 @@ fi
 
 [ -n "${KRONOS_TELEGRAM_CHAT_ID:-${TELEGRAM_CHAT_ID:-}}" ] && ok "Chat ID OK" || bad "Chat ID ausente"
 
-# Kronos repo
 [ -d "${KRONOS_PATH:-/opt/Kronos}" ] && ok "Kronos em ${KRONOS_PATH:-/opt/Kronos}" || bad "KRONOS_PATH não encontrado"
 
-# Cron — Kronos deve estar OFF na Hetzner (Railway é o único ativo)
 if crontab -l 2>/dev/null | grep -qE 'kronos|run_kronos'; then
   bad "Cron Kronos ainda ativo — rode: bash vps/hetzner_disable_kronos.sh"
   crontab -l 2>/dev/null | grep -E 'kronos|run_kronos' | sed 's/^/      /'
 elif [ "${KRONOS_VPS_ENABLED:-0}" = "1" ]; then
-  warn "KRONOS_VPS_ENABLED=1 mas cron ausente"
+  bad "KRONOS_VPS_ENABLED=1 — Kronos só no Railway. Rode: bash vps/hetzner_disable_kronos.sh"
 else
   ok "Cron Kronos desligado (correto — Railway ativo)"
 fi
@@ -78,7 +73,6 @@ else
   ok "quant_bot off nesta VPS (comandos no Railway)"
 fi
 
-# Logs recentes
 for log in /var/log/kronos_signal.log /var/log/kronos_scorecard.log "$REPO_DIR/vps/kronos_signal.log"; do
   if [ -f "$log" ]; then
     echo
@@ -120,21 +114,9 @@ else
   warn "kronos_status.py ausente — git pull origin main"
 fi
 
-if [ "$RUN_SCORE" -eq 1 ]; then
+if [ "$RUN_SCORE" -eq 1 ] || [ "$RUN_SIGNAL" -eq 1 ]; then
   echo
-  echo "=== Scorecard Telegram ==="
-  "$PY" "$REPO_DIR/vps/kronos_scorecard.py" --force || bad "kronos_scorecard falhou"
-fi
-
-if [ "$RUN_SIGNAL" -eq 1 ]; then
-  echo
-  echo "=== Previsão Kronos (1H) ==="
-  if [ -x "$REPO_DIR/vps/run_kronos.sh" ]; then
-    "$REPO_DIR/vps/run_kronos.sh" /var/log/kronos_signal.log 1h || bad "kronos_signal falhou"
-  else
-    "$PY" "$REPO_DIR/vps/kronos_signal.py" --tf 1h || bad "kronos_signal falhou"
-  fi
-  ok "Previsão enviada (verifique Telegram [KRONOS])"
+  bad "--signal/--score recusados: Kronos paper só no Railway (evita [KRONOS] duplicado)"
 fi
 
 echo
