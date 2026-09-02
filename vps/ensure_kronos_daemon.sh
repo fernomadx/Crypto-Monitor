@@ -2,6 +2,12 @@
 # Garante kronos_daemon rodando (modelo em RAM, alerta no candle 1H).
 set -eu
 
+# Uma casa só: Railway. Hetzner não sobe o daemon.
+if [ -z "${RAILWAY_ENVIRONMENT:-}" ]; then
+  echo "ensure_kronos_daemon: Kronos só no Railway — saindo"
+  exit 0
+fi
+
 if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] && [ -z "${KRONOS_TELEGRAM_BOT_TOKEN:-}" ]; then
   exit 0
 fi

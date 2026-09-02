@@ -23,6 +23,9 @@ pkill -f 'kronos_signal.py' 2>/dev/null || true
 pkill -f 'kronos_daemon.py' 2>/dev/null || true
 pkill -f 'kronos_scorecard.py' 2>/dev/null || true
 pkill -f 'kronos_daily_report.py' 2>/dev/null || true
+pkill -f 'kronos_watchdog.py' 2>/dev/null || true
+pkill -f 'kronos_candle_cron' 2>/dev/null || true
+pkill -f 'run_kronos.sh' 2>/dev/null || true
 
 if [ -f "$REPO_DIR/vps/.env" ]; then
   if grep -q '^KRONOS_VPS_ENABLED=' "$REPO_DIR/vps/.env" 2>/dev/null; then
