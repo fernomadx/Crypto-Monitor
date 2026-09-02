@@ -11,7 +11,7 @@ from unittest import mock
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from vps.quant_bot import _dispatch, webhook_public_url  # noqa: E402
+from vps.quant_bot import GET_UPDATES_LONG_POLL_SEC, _dispatch, get_updates_http_timeout, webhook_public_url  # noqa: E402
 
 
 class WebhookUrlTests(unittest.TestCase):
@@ -75,6 +75,13 @@ class HttpTests(unittest.TestCase):
         finally:
             server.shutdown()
             server.server_close()
+
+
+class GetUpdatesTimeoutTests(unittest.TestCase):
+    def test_http_read_exceeds_telegram_long_poll(self) -> None:
+        _connect, read = get_updates_http_timeout()
+        self.assertGreater(read, GET_UPDATES_LONG_POLL_SEC)
+        self.assertGreaterEqual(_connect, 1)
 
 
 if __name__ == "__main__":

@@ -14,7 +14,11 @@ from lib.kronos_config import apply_v31_defaults  # noqa: E402
 
 apply_v31_defaults()
 
-from lib.kronos_tracker import format_daily_report_telegram, init_kronos_tables  # noqa: E402
+from lib.kronos_tracker import (  # noqa: E402
+    format_daily_report_telegram,
+    init_kronos_tables,
+    write_scorecard_snapshot,
+)
 from lib.telegram import send_kronos_alert  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -24,6 +28,10 @@ logger = logging.getLogger(__name__)
 def run(dry_run: bool = False) -> None:
     init_kronos_tables()
     body = format_daily_report_telegram()
+    try:
+        write_scorecard_snapshot(body)
+    except Exception as exc:
+        logger.warning("snapshot diário: %s", exc)
     if dry_run:
         print(body.replace("<b>", "").replace("</b>", "").replace("<i>", "").replace("</i>", ""))
         return

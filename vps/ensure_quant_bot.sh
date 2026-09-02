@@ -14,6 +14,20 @@ esac
 
 mkdir -p /data
 
+# O log chegou a ~800 MB com traceback de ReadTimeout a cada long-poll.
+_rotate_if_huge() {
+  log="$1"
+  max="${2:-10485760}"
+  if [ -f "$log" ]; then
+    sz=$(wc -c < "$log" | tr -d '[:space:]')
+    if [ "${sz:-0}" -gt "$max" ]; then
+      mv "$log" "${log}.1" 2>/dev/null || true
+      echo "ensure_quant_bot: rotacionou $log (${sz} bytes)"
+    fi
+  fi
+}
+_rotate_if_huge /data/quant_bot.log
+
 BOT="/app/vps/quant_bot.py"
 STAMP="/data/quant_bot.deploy_id"
 if [ -f "$BOT" ]; then
