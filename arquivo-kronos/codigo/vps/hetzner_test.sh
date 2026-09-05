@@ -25,6 +25,7 @@ echo
 
 fail=0
 ok() { echo "  ✅ $1"; }
+note() { echo "  ℹ️  $1"; }
 warn() { echo "  ⚠️  $1"; fail=$((fail + 1)); }
 bad() { echo "  ❌ $1"; fail=$((fail + 1)); }
 
@@ -41,14 +42,19 @@ fi
 if [ -n "${KRONOS_TELEGRAM_BOT_TOKEN:-}" ]; then
   ok "KRONOS_TELEGRAM_BOT_TOKEN configurado"
 elif [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
-  warn "Usando TELEGRAM_* (mesmo bot Railway — pode duplicar alertas)"
+  note "Usando TELEGRAM_* (COMBO5 nesta VPS; comandos no Railway)"
 else
   bad "Sem token Telegram (KRONOS_TELEGRAM_* ou TELEGRAM_*)"
 fi
 
 [ -n "${KRONOS_TELEGRAM_CHAT_ID:-${TELEGRAM_CHAT_ID:-}}" ] && ok "Chat ID OK" || bad "Chat ID ausente"
 
-[ -d "${KRONOS_PATH:-/opt/Kronos}" ] && ok "Kronos em ${KRONOS_PATH:-/opt/Kronos}" || bad "KRONOS_PATH não encontrado"
+# Kronos paper só no Railway — /opt/Kronos ausente no 204 não é falha.
+if [ -d "${KRONOS_PATH:-/opt/Kronos}" ]; then
+  ok "Kronos em ${KRONOS_PATH:-/opt/Kronos} (não deve gerar [KRONOS] daqui)"
+else
+  note "KRONOS_PATH ausente — esperado (paper só no Railway)"
+fi
 
 if crontab -l 2>/dev/null | grep -qE 'kronos|run_kronos'; then
   bad "Cron Kronos ainda ativo — rode: bash vps/hetzner_disable_kronos.sh"
@@ -107,11 +113,12 @@ if tok:
 PY
 
 echo
-echo "=== Scorecard / catálogo ==="
+echo "=== Scorecard / catálogo (informativo — paper no Railway) ==="
 if [ -f "$REPO_DIR/vps/kronos_status.py" ]; then
-  "$PY" "$REPO_DIR/vps/kronos_status.py" 2>&1 | head -40 || warn "kronos_status falhou"
+  # head fecha o pipe → SIGPIPE no python; não contar como falha.
+  "$PY" "$REPO_DIR/vps/kronos_status.py" 2>&1 | head -40 || true
 else
-  warn "kronos_status.py ausente — git pull origin main"
+  note "kronos_status.py ausente — git pull origin main"
 fi
 
 if [ "$RUN_SCORE" -eq 1 ] || [ "$RUN_SIGNAL" -eq 1 ]; then
