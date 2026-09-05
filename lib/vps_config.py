@@ -31,15 +31,23 @@ def save(data: dict) -> None:
 
 
 def get_host() -> str:
+    """Host BTCCURSOR. IP da ATLAS (77) gravado por /vps antigo é ignorado."""
     env = os.environ.get("VPS_HOST", "").strip()
     if env:
-        return env
-    return (load().get("host") or "").strip()
+        return "" if _slot_for_host(env) == "atlas" else env
+    stored = (load().get("host") or "").strip()
+    if stored and _slot_for_host(stored) == "atlas":
+        return ""
+    return stored
 
 
 def set_host(host: str) -> None:
     if not IP_RE.match(host.strip()):
         raise ValueError(f"IPv4 inválido: {host}")
+    if _slot_for_host(host) == "atlas":
+        raise ValueError(
+            "Esse IP é a ATLAS. Use /vps atlas — não gravar como BTCCURSOR."
+        )
     data = load()
     data["host"] = host.strip()
     data["updated_at"] = _now()
