@@ -88,8 +88,16 @@ chmod +x "$REPO_DIR/vps/run_combo5.sh" "$REPO_DIR/vps/combo5_signal.py" \
 touch /var/log/combo5.log /data/quant_bot.log
 # quant_bot no mesmo TELEGRAM_BOT_TOKEN do Railway gera Telegram 409 e mata /ping /combo5.
 pkill -f 'quant_bot.py' 2>/dev/null || true
+if [ -f "$REPO_DIR/scripts/hetzner-kill-legacy-mexc.sh" ]; then
+  bash "$REPO_DIR/scripts/hetzner-kill-legacy-mexc.sh"
+else
+  systemctl stop crypto-mexc-bot 2>/dev/null || true
+  systemctl disable crypto-mexc-bot 2>/dev/null || true
+  pkill -f '/opt/crypto-chart-analyzer' 2>/dev/null || true
+  pkill -f 'crypto-mexc-bot' 2>/dev/null || true
+fi
 TMP=$(mktemp)
-crontab -l 2>/dev/null | grep -vE 'combo5|run_combo5|ensure_quant_bot|quant_bot' > "$TMP" || true
+crontab -l 2>/dev/null | grep -vE 'combo5|run_combo5|ensure_quant_bot|quant_bot|crypto-chart-analyzer|crypto-mexc' > "$TMP" || true
 {
   echo "*/5 * * * * /opt/crypto-monitor/vps/run_combo5.sh >> /var/log/combo5.log 2>&1"
   echo "10 * * * * COMBO5_FORCE_STATUS=1 /opt/crypto-monitor/vps/run_combo5.sh >> /var/log/combo5.log 2>&1"
@@ -116,4 +124,9 @@ if ps -ef | grep -v grep | grep -q '[q]uant_bot.py'; then
   echo "  ⚠️ quant_bot ainda listado — deve estar off nesta VPS (Telegram 409)"
 else
   echo "  ✅ quant_bot off nesta VPS"
+fi
+if ps -ef | grep -v grep | grep -qE 'crypto-mexc-bot|/opt/crypto-chart-analyzer'; then
+  echo "  ⚠️ CCXT legado ainda listado — RequestTimeout no Telegram"
+else
+  echo "  ✅ CCXT legado off nesta VPS"
 fi

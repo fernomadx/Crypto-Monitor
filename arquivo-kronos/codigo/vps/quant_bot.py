@@ -43,6 +43,9 @@ logger = logging.getLogger(__name__)
 OFFSET_PATH = Path(os.environ.get("QUANT_BOT_OFFSET", "/data/quant_bot_offset.txt"))
 SINGLETON_LOCK = Path(os.environ.get("QUANT_BOT_LOCK", "/data/quant_bot.lock"))
 POLL_SEC = int(os.environ.get("QUANT_BOT_POLL_SEC", "2"))
+# Telegram segura getUpdates até `timeout` segundos; o HTTP precisa ser maior, senão
+# o requests estoura ReadTimeout no mesmo instante e o log explode (centenas de MB).
+GET_UPDATES_LONG_POLL_SEC = int(os.environ.get("QUANT_BOT_LONG_POLL_SEC", "25"))
 _singleton_fp = None
 
 
@@ -67,9 +70,19 @@ class TelegramConflict(RuntimeError):
     """Telegram 409 — outro getUpdates (Railway vs Hetzner) no mesmo token."""
 
 
-def _api(method: str, **kwargs) -> dict:
+def get_updates_http_timeout() -> tuple[float, float]:
+    """(connect, read) — read sempre maior que o long-poll do Telegram."""
+    long_poll = max(1, GET_UPDATES_LONG_POLL_SEC)
+    return (10.0, float(long_poll + 15))
+
+
+def _api(method: str, *, http_timeout: float | tuple[float, float] = 30, **kwargs) -> dict:
     token = _bot_token()
-    resp = requests.post(f"https://api.telegram.org/bot{token}/{method}", json=kwargs, timeout=30)
+    resp = requests.post(
+        f"https://api.telegram.org/bot{token}/{method}",
+        json=kwargs,
+        timeout=http_timeout,
+    )
     if resp.status_code == 409:
         raise TelegramConflict(
             "Telegram 409: outro processo usa getUpdates neste bot "
@@ -262,6 +275,7 @@ def _handle_scorecard(args: str) -> str:
         format_scorecard_telegram,
         init_kronos_tables,
         score_mature_predictions,
+        write_scorecard_snapshot,
     )
 
     apply_v31_defaults()
@@ -282,6 +296,10 @@ def _handle_scorecard(args: str) -> str:
         else:
             short_closed = [t for t in new_trades if t.get("horizon") == "short"]
             body = format_scorecard_telegram(new_trades=short_closed if short_closed else None)
+        try:
+            write_scorecard_snapshot(body)
+        except Exception as exc:
+            logger.warning("scorecard snapshot: %s", exc)
         return body + warn
     except Exception as exc:
         logger.exception("scorecard format: %s", exc)
@@ -546,10 +564,19 @@ def run() -> None:
 
     _ensure_polling()
     offset = _load_offset()
+    logger.warning(
+        "Modo polling (sem webhook). Defina QUANT_WEBHOOK_URL ou domínio público no Railway."
+    )
 
     while True:
         try:
-            data = _api("getUpdates", offset=offset, timeout=30, allowed_updates=["message"])
+            data = _api(
+                "getUpdates",
+                http_timeout=get_updates_http_timeout(),
+                offset=offset,
+                timeout=GET_UPDATES_LONG_POLL_SEC,
+                allowed_updates=["message"],
+            )
             for upd in data.get("result", []):
                 offset = upd["update_id"] + 1
                 _process_update(upd)
@@ -569,9 +596,14 @@ def run() -> None:
                     logger.warning("webhook após 409 falhou: %s", hook_exc)
             time.sleep(20)
             continue
+        except (requests.exceptions.ReadTimeout, requests.exceptions.ConnectionError) as exc:
+            logger.warning("quant_bot getUpdates: %s", type(exc).__name__)
+            time.sleep(2)
+            continue
         except Exception as exc:
             logger.exception("quant_bot loop: %s", exc)
             time.sleep(5)
+            continue
         time.sleep(POLL_SEC)
 
 

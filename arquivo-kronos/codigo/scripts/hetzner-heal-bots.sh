@@ -74,11 +74,20 @@ chmod +x "$REPO_DIR/vps/run_combo5.sh" "$REPO_DIR/vps/combo5_signal.py"
 
 echo "  → parando quant_bot (evita Telegram 409 com o Railway)"
 pkill -f 'quant_bot.py' 2>/dev/null || true
+if [ -f "$REPO_DIR/scripts/hetzner-kill-legacy-mexc.sh" ]; then
+  bash "$REPO_DIR/scripts/hetzner-kill-legacy-mexc.sh"
+else
+  echo "  ⚠️ hetzner-kill-legacy-mexc.sh ausente — pkill direto"
+  systemctl stop crypto-mexc-bot 2>/dev/null || true
+  systemctl disable crypto-mexc-bot 2>/dev/null || true
+  pkill -f '/opt/crypto-chart-analyzer' 2>/dev/null || true
+  pkill -f 'crypto-mexc-bot' 2>/dev/null || true
+fi
 sleep 1
 
 touch /var/log/combo5.log /data/quant_bot.log
 TMP=$(mktemp)
-crontab -l 2>/dev/null | grep -vE 'combo5|run_combo5|ensure_quant_bot|quant_bot' > "$TMP" || true
+crontab -l 2>/dev/null | grep -vE 'combo5|run_combo5|ensure_quant_bot|quant_bot|crypto-chart-analyzer|crypto-mexc' > "$TMP" || true
 {
   echo "*/5 * * * * /opt/crypto-monitor/vps/run_combo5.sh >> /var/log/combo5.log 2>&1"
   echo "10 * * * * COMBO5_FORCE_STATUS=1 /opt/crypto-monitor/vps/run_combo5.sh >> /var/log/combo5.log 2>&1"
@@ -92,7 +101,7 @@ echo "=== Diagnóstico ==="
 echo "-- disk --"
 df -h / /data 2>/dev/null || df -h /
 echo "-- processes --"
-ps -ef | grep -E 'quant_bot|combo5_signal|kronos_' | grep -v grep || echo "  (nenhum processo bot listado)"
+ps -ef | grep -E 'quant_bot|combo5_signal|kronos_|crypto-mexc|crypto-chart-analyzer|mexc_analise' | grep -v grep || echo "  (nenhum processo bot listado)"
 echo "-- crontab --"
 crontab -l | grep -E 'combo5|quant_bot|kronos' || echo "  (sem linhas combo5/quant/kronos)"
 echo "-- combo5 log --"
@@ -127,6 +136,7 @@ try:
         "COMBO5 reativado nesta VPS.\n"
         "• cron 5 min + análise <code>:10</code> UTC\n"
         "• <code>quant_bot</code> <b>off</b> aqui — comandos <code>/ping</code> <code>/combo5</code> no Railway\n"
+        "• CCXT legado <code>crypto-mexc-bot</code> morto (some o RequestTimeout)\n"
         "<i>Evita Telegram 409 (dois getUpdates no mesmo token).</i>",
     )
     print("  ✅ alerta [COMBO5] Heal enviado")
@@ -139,6 +149,6 @@ COMBO5_FORCE_STATUS=1 "$REPO_DIR/vps/.venv/bin/python" "$REPO_DIR/vps/combo5_sig
 echo
 echo "=== Heal concluído ==="
 echo "  git:  $(git -C "$REPO_DIR" rev-parse --short HEAD)"
-echo "  COMBO5 cron ativo; quant_bot morto nesta VPS"
+echo "  COMBO5 cron ativo; quant_bot e CCXT legado mortos nesta VPS"
 echo "  Telegram: deve chegar [COMBO5] Heal Hetzner"
 echo "  log:  tail -f /var/log/combo5.log"

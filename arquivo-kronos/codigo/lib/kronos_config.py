@@ -50,6 +50,29 @@ def apply_v31_defaults(force: bool = True) -> None:
     apply_kronos_defaults(force=force)
 
 
+def kronos_allowed_here() -> bool:
+    """Paper Kronos só no Railway. Hetzner / GHA / laptop = off."""
+    if os.environ.get("RAILWAY_ENVIRONMENT", "").strip():
+        return True
+    return os.environ.get("KRONOS_ALLOW_LOCAL", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def require_railway_or_exit() -> None:
+    """Sai 0 se este host não for o Railway (evita [KRONOS] duplicado)."""
+    if kronos_allowed_here():
+        return
+    print(
+        "Kronos só no Railway — ignorado neste host (Hetzner/GHA/local).",
+        flush=True,
+    )
+    raise SystemExit(0)
+
+
 def score_tickers() -> frozenset[str]:
     """Tickers permitidos no scorecard (ex.: BTC → só Bitcoin)."""
     raw = os.environ.get("KRONOS_SCORE_TICKERS", "BTC").strip()
