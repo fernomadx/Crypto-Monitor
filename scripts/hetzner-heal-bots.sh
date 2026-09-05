@@ -87,7 +87,7 @@ sleep 1
 
 touch /var/log/combo5.log /data/quant_bot.log
 TMP=$(mktemp)
-crontab -l 2>/dev/null | grep -vE 'combo5|run_combo5|ensure_quant_bot|quant_bot|crypto-chart-analyzer|crypto-mexc' > "$TMP" || true
+crontab -l 2>/dev/null | grep -vE 'combo5|run_combo5|ensure_quant_bot|quant_bot|crypto-chart-analyzer|crypto-mexc|kronos|run_kronos' > "$TMP" || true
 {
   echo "*/5 * * * * /opt/crypto-monitor/vps/run_combo5.sh >> /var/log/combo5.log 2>&1"
   echo "10 * * * * COMBO5_FORCE_STATUS=1 /opt/crypto-monitor/vps/run_combo5.sh >> /var/log/combo5.log 2>&1"
