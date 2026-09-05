@@ -19,12 +19,16 @@ REMOTE_BOOTSTRAP = """
 set -e
 export REPO_DIR=/opt/crypto-monitor
 if [ -d "$REPO_DIR/.git" ]; then
-  cd "$REPO_DIR" && git pull origin main
-  chmod +x vps/hetzner_disable_kronos.sh vps/hetzner_test.sh
+  cd "$REPO_DIR" && git fetch origin && git reset --hard origin/main
+  chmod +x vps/hetzner_disable_kronos.sh vps/hetzner_test.sh scripts/hetzner-kill-legacy-mexc.sh 2>/dev/null || true
   bash vps/hetzner_disable_kronos.sh
+  if [ -f scripts/hetzner-kill-legacy-mexc.sh ]; then
+    bash scripts/hetzner-kill-legacy-mexc.sh
+  fi
   bash vps/hetzner_test.sh
 else
   curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/vps/hetzner_disable_kronos.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/scripts/hetzner-kill-legacy-mexc.sh | bash
 fi
 """
 
