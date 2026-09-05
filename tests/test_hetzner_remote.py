@@ -61,6 +61,30 @@ class HealRoutingTests(unittest.TestCase):
         self.assertIn("hetzner-heal-bots.sh", hetzner_remote.REMOTE_BOOTSTRAP)
         self.assertIn("hetzner-heal-204.sh", hetzner_remote.REMOTE_BOOTSTRAP)
         self.assertIn("hetzner_disable_kronos.sh", hetzner_remote.REMOTE_BOOTSTRAP)
+        else_branch = hetzner_remote.REMOTE_BOOTSTRAP.split("else", 1)[1]
+        self.assertIn("hetzner_disable_kronos.sh", else_branch)
+
+    def test_is_atlas_host(self) -> None:
+        self.assertTrue(hetzner_remote.is_atlas_host("atlas"))
+        self.assertTrue(hetzner_remote.is_atlas_host("77"))
+        self.assertTrue(hetzner_remote.is_atlas_host(hetzner_remote.DEFAULT_ATLAS_HOST))
+        self.assertFalse(hetzner_remote.is_atlas_host(hetzner_remote.DEFAULT_BTCCURSOR_HOST))
+        self.assertFalse(hetzner_remote.is_atlas_host(""))
+        os.environ["VPS_ATLAS_HOST"] = "10.0.0.77"
+        self.assertTrue(hetzner_remote.is_atlas_host("10.0.0.77"))
+
+    def test_heal_204_does_not_restart_legacy_ccxt(self) -> None:
+        script = (REPO_ROOT / "scripts" / "hetzner-heal-204.sh").read_text()
+        self.assertIn(
+            "for svc in nginx caddy streamlit crypto-web crypto-dashboard; do",
+            script,
+        )
+        self.assertNotIn("crypto-chart-analyzer", script)
+        self.assertNotRegex(script, r"grep -iE '[^']*\|chart")
+
+    def test_heal_bots_crontab_drops_kronos(self) -> None:
+        script = (REPO_ROOT / "scripts" / "hetzner-heal-bots.sh").read_text()
+        self.assertIn("kronos|run_kronos", script)
 
 
 if __name__ == "__main__":

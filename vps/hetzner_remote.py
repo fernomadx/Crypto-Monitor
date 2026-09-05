@@ -17,6 +17,22 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_BTCCURSOR_HOST = "204.168.179.200"
 DEFAULT_ATLAS_HOST = "77.42.126.222"
+
+
+def is_atlas_host(host: str | None) -> bool:
+    """True se o alvo é a ATLAS (77), não a BTCCURSOR (204)."""
+    if not host:
+        return False
+    h = host.strip().lower()
+    if not h:
+        return False
+    aliases = {"atlas", "77", DEFAULT_ATLAS_HOST}
+    extra = (os.getenv("VPS_ATLAS_HOST") or "").strip().lower()
+    if extra:
+        aliases.add(extra)
+    return h in aliases
+
+
 AUTH_HINT = (
     "<i>SSH recusado. Na Console Hetzner cole:</i>\n"
     "<code>mkdir -p ~/.ssh && curl -fsSL "
@@ -43,6 +59,7 @@ if [ -d "$REPO_DIR/.git" ]; then
   bash vps/hetzner_test.sh
 else
   curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/scripts/hetzner-heal-bots.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/vps/hetzner_disable_kronos.sh | bash || true
   curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/scripts/hetzner-heal-204.sh | bash || true
 fi
 """
@@ -153,11 +170,11 @@ def sync_and_test(host: str | None = None) -> str:
     try:
         code, out, err = ssh_run(target, REMOTE_BOOTSTRAP)
         combined = (out + "\n" + err).strip()
-        record_sync(ok=code == 0, summary=_tail(combined))
+        record_sync(ok=code == 0, summary=_tail(combined), host=target)
         return _format_host_result("BTCCURSOR", target, code, out, err)
     except Exception as exc:
         logger.exception("hetzner sync: %s", exc)
-        record_sync(ok=False, summary=str(exc))
+        record_sync(ok=False, summary=str(exc), host=target)
         extra = f"\n\n{AUTH_HINT}" if _looks_like_auth_failure(str(exc)) else ""
         return f"❌ SSH falhou ({target}): {exc}{extra}"
 
@@ -181,11 +198,11 @@ def heal_atlas(host: str | None = None) -> str:
     try:
         code, out, err = ssh_run(target, script)
         combined = (out + "\n" + err).strip()
-        record_sync(ok=code == 0, summary=f"ATLAS {target}: {_tail(combined)}")
+        record_sync(ok=code == 0, summary=f"ATLAS {target}: {_tail(combined)}", host=target)
         return _format_host_result("ATLAS", target, code, out, err)
     except Exception as exc:
         logger.exception("atlas heal: %s", exc)
-        record_sync(ok=False, summary=f"ATLAS {target}: {exc}")
+        record_sync(ok=False, summary=f"ATLAS {target}: {exc}", host=target)
         extra = f"\n\n{AUTH_HINT}" if _looks_like_auth_failure(str(exc)) else ""
         return f"❌ SSH ATLAS falhou ({target}): {exc}{extra}"
 
@@ -205,8 +222,8 @@ if __name__ == "__main__":
     arg = sys.argv[1] if len(sys.argv) > 1 else "all"
     if arg in {"all", "heal"}:
         raw = heal_all()
-    elif arg in {"atlas", DEFAULT_ATLAS_HOST}:
-        raw = heal_atlas(DEFAULT_ATLAS_HOST if arg == "atlas" else arg)
+    elif is_atlas_host(arg):
+        raw = heal_atlas(None if arg.lower() in {"atlas", "77"} else arg)
     else:
         raw = sync_and_test(arg)
     print(
