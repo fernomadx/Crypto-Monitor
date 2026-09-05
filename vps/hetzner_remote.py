@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""SSH na Hetzner a partir do Railway — bootstrap + teste."""
+"""SSH na Hetzner a partir do Railway — heal BTCCURSOR (204) + ATLAS (77)."""
 
 from __future__ import annotations
 
@@ -15,22 +15,51 @@ sys.path.insert(0, str(REPO_ROOT))
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_BTCCURSOR_HOST = "204.168.179.200"
+DEFAULT_ATLAS_HOST = "77.42.126.222"
+AUTH_HINT = (
+    "<i>SSH recusado. Na Console Hetzner cole:</i>\n"
+    "<code>mkdir -p ~/.ssh && curl -fsSL "
+    "https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/scripts/vps_deploy_key.pub "
+    ">> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys</code>"
+)
+
+# Heal completo no 204: sync main, Kronos off, COMBO5 on, CCXT morto, nginx se 502.
 REMOTE_BOOTSTRAP = """
 set -e
 export REPO_DIR=/opt/crypto-monitor
 if [ -d "$REPO_DIR/.git" ]; then
   cd "$REPO_DIR" && git fetch origin && git reset --hard origin/main
-  chmod +x vps/hetzner_disable_kronos.sh vps/hetzner_test.sh scripts/hetzner-kill-legacy-mexc.sh 2>/dev/null || true
+  chmod +x vps/hetzner_disable_kronos.sh vps/hetzner_test.sh scripts/hetzner-kill-legacy-mexc.sh scripts/hetzner-heal-bots.sh scripts/hetzner-heal-204.sh 2>/dev/null || true
   bash vps/hetzner_disable_kronos.sh
-  if [ -f scripts/hetzner-kill-legacy-mexc.sh ]; then
+  if [ -f scripts/hetzner-heal-bots.sh ]; then
+    bash scripts/hetzner-heal-bots.sh
+  elif [ -f scripts/hetzner-kill-legacy-mexc.sh ]; then
     bash scripts/hetzner-kill-legacy-mexc.sh
+  fi
+  if [ -f scripts/hetzner-heal-204.sh ]; then
+    bash scripts/hetzner-heal-204.sh || true
   fi
   bash vps/hetzner_test.sh
 else
-  curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/vps/hetzner_disable_kronos.sh | bash
-  curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/scripts/hetzner-kill-legacy-mexc.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/scripts/hetzner-heal-bots.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/scripts/hetzner-heal-204.sh | bash || true
 fi
 """
+
+
+def default_btccursor_host() -> str:
+    from lib.vps_config import get_host
+
+    return (
+        os.environ.get("VPS_HOST", "").strip()
+        or get_host()
+        or DEFAULT_BTCCURSOR_HOST
+    )
+
+
+def default_atlas_host() -> str:
+    return os.environ.get("VPS_ATLAS_HOST", "").strip() or DEFAULT_ATLAS_HOST
 
 
 def _load_private_key():
@@ -67,7 +96,7 @@ def ssh_run(host: str, script: str, *, timeout: int = 600) -> tuple[int, str, st
             banner_timeout=30,
             auth_timeout=30,
         )
-        stdin, stdout, stderr = client.exec_command(script, timeout=timeout)
+        _stdin, stdout, stderr = client.exec_command(script, timeout=timeout)
         out = stdout.read().decode("utf-8", errors="replace")
         err = stderr.read().decode("utf-8", errors="replace")
         code = stdout.channel.recv_exit_status()
@@ -76,10 +105,41 @@ def ssh_run(host: str, script: str, *, timeout: int = 600) -> tuple[int, str, st
         client.close()
 
 
-def sync_and_test(host: str | None = None) -> str:
-    from lib.vps_config import get_host, record_sync
+def _tail(text: str, n: int = 80) -> str:
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    if not lines:
+        return "(sem output)"
+    return "\n".join(lines[-n:])
 
-    target = (host or get_host()).strip()
+
+def _looks_like_auth_failure(msg: str) -> bool:
+    low = msg.lower()
+    return "authentication failed" in low or "auth fail" in low or "permission denied" in low
+
+
+def _format_host_result(kind: str, host: str, code: int, out: str, err: str) -> str:
+    combined = (out + "\n" + err).strip()
+    tail = _tail(combined)
+    if code == 0:
+        return (
+            f"<b>✅ {kind} OK</b> — <code>{host}</code>\n\n"
+            f"<pre>{tail[-3500:]}</pre>"
+        )
+    extra = ""
+    if _looks_like_auth_failure(combined):
+        extra = f"\n\n{AUTH_HINT}"
+    else:
+        extra = "\n\n<i>SSH autenticou; o exit veio do heal/teste no host.</i>"
+    return (
+        f"<b>❌ {kind} falhou</b> (exit {code}) — <code>{host}</code>\n\n"
+        f"<pre>{tail[-3500:]}</pre>{extra}"
+    )
+
+
+def sync_and_test(host: str | None = None) -> str:
+    from lib.vps_config import record_sync
+
+    target = (host or default_btccursor_host()).strip()
     if not target:
         return (
             "⚠️ VPS sem IP.\n"
@@ -93,34 +153,47 @@ def sync_and_test(host: str | None = None) -> str:
     try:
         code, out, err = ssh_run(target, REMOTE_BOOTSTRAP)
         combined = (out + "\n" + err).strip()
-        tail = "\n".join(combined.splitlines()[-25:]) if combined else "(sem output)"
-        ok = code == 0
-        record_sync(ok=ok, summary=tail)
-        if ok:
-            return (
-                f"<b>✅ Hetzner OK</b> — <code>{target}</code>\n\n"
-                f"<pre>{tail[-3500:]}</pre>"
-            )
-        return (
-            f"<b>❌ Hetzner falhou</b> (exit {code}) — <code>{target}</code>\n\n"
-            f"<pre>{tail[-3500:]}</pre>\n\n"
-            "<i>Se auth failed: na Console Hetzner cole:</i>\n"
-            "<code>mkdir -p ~/.ssh && curl -fsSL "
-            "https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/scripts/vps_deploy_key.pub "
-            ">> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys</code>"
-        )
+        record_sync(ok=code == 0, summary=_tail(combined))
+        return _format_host_result("BTCCURSOR", target, code, out, err)
     except Exception as exc:
         logger.exception("hetzner sync: %s", exc)
         record_sync(ok=False, summary=str(exc))
-        msg = str(exc)
-        extra = ""
-        if "Authentication failed" in msg or "auth" in msg.lower():
-            extra = (
-                "\n\n<i>Adicione a chave pública na Hetzner (Console):</i>\n"
-                "<code>curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/scripts/vps_deploy_key.pub "
-                "| tee -a ~/.ssh/authorized_keys</code>"
-            )
-        return f"❌ SSH falhou: {msg}{extra}"
+        extra = f"\n\n{AUTH_HINT}" if _looks_like_auth_failure(str(exc)) else ""
+        return f"❌ SSH falhou ({target}): {exc}{extra}"
+
+
+def heal_atlas(host: str | None = None) -> str:
+    from lib.vps_config import record_sync
+
+    target = (host or default_atlas_host()).strip()
+    if not re.match(r"^(?:\d{1,3}\.){3}\d{1,3}$", target):
+        return f"⚠️ ATLAS IPv4 inválido: {target}"
+
+    script_path = REPO_ROOT / "scripts" / "hetzner-heal-atlas.sh"
+    if script_path.is_file():
+        script = script_path.read_text(encoding="utf-8")
+    else:
+        script = (
+            "curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/"
+            "main/scripts/hetzner-heal-atlas.sh | bash"
+        )
+
+    try:
+        code, out, err = ssh_run(target, script)
+        combined = (out + "\n" + err).strip()
+        record_sync(ok=code == 0, summary=f"ATLAS {target}: {_tail(combined)}")
+        return _format_host_result("ATLAS", target, code, out, err)
+    except Exception as exc:
+        logger.exception("atlas heal: %s", exc)
+        record_sync(ok=False, summary=f"ATLAS {target}: {exc}")
+        extra = f"\n\n{AUTH_HINT}" if _looks_like_auth_failure(str(exc)) else ""
+        return f"❌ SSH ATLAS falhou ({target}): {exc}{extra}"
+
+
+def heal_all() -> str:
+    """BTCCURSOR 204 + ATLAS 77. Falha de um não aborta o outro."""
+    parts = [sync_and_test(default_btccursor_host()), heal_atlas(default_atlas_host())]
+    return "\n\n———\n\n".join(parts)
 
 
 def format_for_telegram(text: str) -> str:
@@ -129,5 +202,20 @@ def format_for_telegram(text: str) -> str:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    host = sys.argv[1] if len(sys.argv) > 1 else None
-    print(sync_and_test(host).replace("<b>", "").replace("</b>", "").replace("<code>", "").replace("</code>", "").replace("<pre>", "").replace("</pre>", "").replace("<i>", "").replace("</i>", ""))
+    arg = sys.argv[1] if len(sys.argv) > 1 else "all"
+    if arg in {"all", "heal"}:
+        raw = heal_all()
+    elif arg in {"atlas", DEFAULT_ATLAS_HOST}:
+        raw = heal_atlas(DEFAULT_ATLAS_HOST if arg == "atlas" else arg)
+    else:
+        raw = sync_and_test(arg)
+    print(
+        raw.replace("<b>", "")
+        .replace("</b>", "")
+        .replace("<code>", "")
+        .replace("</code>", "")
+        .replace("<pre>", "")
+        .replace("</pre>", "")
+        .replace("<i>", "")
+        .replace("</i>", "")
+    )

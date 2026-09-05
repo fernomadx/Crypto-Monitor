@@ -9,7 +9,7 @@ Comandos (só responde TELEGRAM_CHAT_ID autorizado):
   /mexc                 — 📊 MEXC Análise (spot + futuros, sem CCXT)
   /btc /eth /sol        — snapshot mercado + contexto
   /scorecard            — acerto Kronos (simulação 4H)
-  /vps [IP|test]        — configura/testa Hetzner BTCCURSOR
+  /vps [IP|test|atlas]  — heals Hetzner 204 + ATLAS 77
   /help
 
 Rodar no Hetzner: nohup python vps/quant_bot.py >> /data/quant_bot.log 2>&1 &
@@ -43,18 +43,13 @@ logger = logging.getLogger(__name__)
 OFFSET_PATH = Path(os.environ.get("QUANT_BOT_OFFSET", "/data/quant_bot_offset.txt"))
 SINGLETON_LOCK = Path(os.environ.get("QUANT_BOT_LOCK", "/data/quant_bot.lock"))
 POLL_SEC = int(os.environ.get("QUANT_BOT_POLL_SEC", "2"))
-# Telegram segura getUpdates até `timeout` segundos; o HTTP precisa ser maior, senão
-# o requests estoura ReadTimeout no mesmo instante e o log explode (centenas de MB).
 GET_UPDATES_LONG_POLL_SEC = int(os.environ.get("QUANT_BOT_LONG_POLL_SEC", "25"))
 _singleton_fp = None
 
 
 def _enabled() -> bool:
     return os.environ.get("QUANT_BOT_ENABLED", "1").strip().lower() not in {
-        "0",
-        "false",
-        "no",
-        "off",
+        "0", "false", "no", "off",
     }
 
 
@@ -71,7 +66,6 @@ class TelegramConflict(RuntimeError):
 
 
 def get_updates_http_timeout() -> tuple[float, float]:
-    """(connect, read) — read sempre maior que o long-poll do Telegram."""
     long_poll = max(1, GET_UPDATES_LONG_POLL_SEC)
     return (10.0, float(long_poll + 15))
 
@@ -94,7 +88,6 @@ def _api(method: str, *, http_timeout: float | tuple[float, float] = 30, **kwarg
 
 
 def _acquire_singleton() -> bool:
-    """Uma única instância por container (evita /ping duplicado)."""
     global _singleton_fp
     SINGLETON_LOCK.parent.mkdir(parents=True, exist_ok=True)
     fp = open(SINGLETON_LOCK, "w")
@@ -126,7 +119,6 @@ def _webhook_secret() -> str:
 
 
 def webhook_public_url() -> str:
-    """URL HTTPS que o Telegram chama. Vazio = usar polling."""
     explicit = os.environ.get("QUANT_WEBHOOK_URL", "").strip()
     if explicit:
         url = explicit.rstrip("/")
@@ -159,7 +151,6 @@ def _listen_port() -> int:
 
 
 def _ensure_polling() -> None:
-    """Remove webhook para permitir getUpdates (comum após deploy)."""
     try:
         _api("deleteWebhook", drop_pending_updates=False)
         logger.info("Telegram: webhook removido — modo polling ativo")
@@ -229,7 +220,7 @@ def _help_text() -> str:
         "/scorecard — acerto das entradas Kronos (7d/30d, simulação 4H)\n"
         "/scorecard diario — ranking por timeframe + resumo\n"
         "/resetscorecard — apaga catálogo e recomeça scorecard v5 limpo\n"
-        "/vps — status Hetzner · <code>/vps test</code> desliga Kronos duplicado · <code>/vps IP</code>\n"
+        "/vps — status Hetzner · <code>/vps test</code> heals 204+77 · <code>/vps atlas</code> · <code>/vps IP</code>\n"
         "/help — esta ajuda\n\n"
         f"<i>Canal [QUANT] separado do [KRONOS]/[COMBO5].</i>\n"
         f"<i>{_llmquant_status_line()}</i>"
@@ -241,9 +232,7 @@ def _handle_context() -> str:
 
 
 def _handle_mexc(args: str) -> str:
-    """📊 MEXC Análise — spot + futuros (substitui CCXT / RequestTimeout)."""
     from lib.mexc_analise import analyze_now
-
     try:
         return analyze_now(args.strip() or None)
     except Exception as exc:
@@ -252,19 +241,13 @@ def _handle_mexc(args: str) -> str:
 
 
 def _handle_combo5(args: str) -> str:
-    """Análise COMBO5 sob demanda — mesmo motor do cron 5 min / horário."""
     from vps.combo5_signal import analyze_now
-
     try:
         body = analyze_now(args.strip() or None)
     except Exception as exc:
         logger.exception("combo5 on-demand: %s", exc)
         return f"⚠️ Falha na análise COMBO5: {exc}"
-    plain = (
-        body.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
+    plain = body.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     return f"🎯 <b>[COMBO5]</b> sob demanda\n\n<pre>{plain}</pre>"
 
 
@@ -277,10 +260,8 @@ def _handle_scorecard(args: str) -> str:
         score_mature_predictions,
         write_scorecard_snapshot,
     )
-
     apply_v31_defaults()
     init_kronos_tables()
-
     warn = ""
     new_trades: list = []
     try:
@@ -288,7 +269,6 @@ def _handle_scorecard(args: str) -> str:
     except Exception as exc:
         logger.exception("scorecard: %s", exc)
         warn = f"\n\n⚠️ Não foi possível fechar trades pendentes agora: {exc}\n<i>Mostrando catálogo já gravado.</i>"
-
     sub = args.strip().lower()
     try:
         if sub in ("diario", "daily", "ranking", "relatorio", "relatório"):
@@ -309,7 +289,6 @@ def _handle_scorecard(args: str) -> str:
 def _handle_reset_scorecard() -> str:
     from lib.kronos_config import apply_kronos_defaults, active_config, RULES_VERSION
     from lib.kronos_rules_stamp import ensure_catalog_for_current_rules
-
     apply_kronos_defaults()
     os.environ["KRONOS_FORCE_CATALOG_RESET"] = "1"
     did, deleted = ensure_catalog_for_current_rules(notify=False)
@@ -326,13 +305,14 @@ def _handle_reset_scorecard() -> str:
 
 def _handle_vps(args: str) -> str:
     from lib import vps_config
-    from vps.hetzner_remote import sync_and_test
-
+    from vps.hetzner_remote import heal_all, heal_atlas, sync_and_test
     sub = args.strip().lower()
     if sub in ("", "status", "info"):
         return vps_config.status_text()
-    if sub in ("test", "sync", "check"):
-        return sync_and_test()
+    if sub in ("test", "sync", "check", "heal"):
+        return heal_all()
+    if sub in ("atlas", "77"):
+        return heal_atlas()
     ip = args.strip().split()[0]
     try:
         vps_config.set_host(ip)
@@ -369,12 +349,10 @@ def _dispatch(text: str) -> str:
     cmd, _, rest = text.strip().partition(" ")
     cmd = cmd.split("@")[0].lower()
     rest = rest.strip()
-
     if cmd in ("/start", "/help"):
         return _help_text()
     if cmd in ("/ping", "/pin"):
         from lib.quant_impact import impact_alerts_enabled
-
         api = _llmquant_status_line(verify=True)
         thresh = os.environ.get("QUANT_IMPACT_THRESHOLD", "0.70")
         alerts = (
@@ -417,34 +395,23 @@ def _process_update(upd: dict) -> None:
     msg = upd.get("message") or {}
     chat_id = str(msg.get("chat", {}).get("id", ""))
     text = (msg.get("text") or "").strip()
-
     if chat_id != _allowed_chat() or not text.startswith("/"):
         return
-
     logger.info("Comando: %s", text[:80])
     cmd, _, rest = text.strip().partition(" ")
     cmd = cmd.split("@")[0].lower()
     rest = rest.strip()
     if cmd in ("/scorecard", "/score", "/acerto"):
-        send_quant_reply(
-            chat_id,
-            "⏳ Calculando scorecard Kronos (consulta MEXC + catálogo)…",
-        )
+        send_quant_reply(chat_id, "⏳ Calculando scorecard Kronos (consulta MEXC + catálogo)…")
     elif cmd in ("/combo5", "/analise", "/análise", "/c5"):
-        send_quant_reply(
-            chat_id,
-            "⏳ Analisando COMBO5 ao vivo (candles MEXC + Kronos 3TF)…",
-        )
+        send_quant_reply(chat_id, "⏳ Analisando COMBO5 ao vivo (candles MEXC + Kronos 3TF)…")
     elif cmd in ("/mexc", "/mexcanálise", "/mexc_analise"):
-        send_quant_reply(
-            chat_id,
-            "⏳ Consultando MEXC spot + futuros (retry se a API atrasar)…",
-        )
+        send_quant_reply(chat_id, "⏳ Consultando MEXC spot + futuros (retry se a API atrasar)…")
     elif cmd in ("/vps", "/hetzner", "/btccursor"):
-        if rest.lower() in ("test", "sync", "check") or (
+        if rest.lower() in ("test", "sync", "check", "heal", "atlas", "77") or (
             rest and rest.split()[0][0].isdigit()
         ):
-            send_quant_reply(chat_id, "⏳ Hetzner: desligando Kronos duplicado e verificando…")
+            send_quant_reply(chat_id, "⏳ Hetzner: heal BTCCURSOR 204 + ATLAS 77…")
     reply = _dispatch(text)
     if not send_quant_reply(chat_id, reply):
         send_quant_reply(
@@ -465,14 +432,17 @@ class _WebhookHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def do_GET(self) -> None:  # noqa: N802
+    def do_GET(self) -> None:
         path = self.path.split("?", 1)[0].rstrip("/") or "/"
-        if path in {"/", "/health", "/healthz"}:
+        if path in {"/", "/health", "/healthz", "/ping"}:
             self._send(200, b"quant-bot ok\n")
+            return
+        if path == "/telegram":
+            self._send(405, b"POST only - Telegram webhook\n")
             return
         self._send(404, b"not found\n")
 
-    def do_POST(self) -> None:  # noqa: N802
+    def do_POST(self) -> None:
         path = self.path.split("?", 1)[0].rstrip("/") or "/"
         if path != "/telegram":
             self._send(404, b"not found\n")
@@ -501,7 +471,7 @@ def _start_http(port: int) -> ThreadingHTTPServer | None:
         return None
     thread = threading.Thread(target=server.serve_forever, name="quant-http", daemon=True)
     thread.start()
-    logger.info("HTTP quant_bot em 0.0.0.0:%s (/health, /telegram)", port)
+    logger.info("HTTP quant_bot em 0.0.0.0:%s (/health, /ping, POST /telegram)", port)
     return server
 
 
@@ -525,7 +495,6 @@ def _resolve_webhook_url() -> str:
 
 def run() -> None:
     port = _listen_port()
-
     if not _enabled():
         logger.info("QUANT_BOT_ENABLED=0 — Telegram off; /health se PORT")
         if port:
@@ -533,7 +502,6 @@ def run() -> None:
             while True:
                 time.sleep(3600)
         return
-
     if not _bot_token() or not _allowed_chat():
         logger.error("TELEGRAM_BOT_TOKEN/CHAT_ID ausentes")
         if port:
@@ -541,14 +509,11 @@ def run() -> None:
             while True:
                 time.sleep(3600)
         raise RuntimeError("TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID obrigatórios")
-
     if not _acquire_singleton():
         return
-
     logger.info("QUANT bot ativo (chat %s)", _allowed_chat())
     http = _start_http(port) if port else None
     webhook_url = _resolve_webhook_url()
-
     if webhook_url:
         try:
             _ensure_webhook(webhook_url)
@@ -561,13 +526,11 @@ def run() -> None:
             logger.exception("webhook falhou (%s) — caindo para polling", exc)
             if http is None and port:
                 http = _start_http(port)
-
     _ensure_polling()
     offset = _load_offset()
     logger.warning(
         "Modo polling (sem webhook). Defina QUANT_WEBHOOK_URL ou domínio público no Railway."
     )
-
     while True:
         try:
             data = _api(
