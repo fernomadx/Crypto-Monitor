@@ -1,7 +1,7 @@
 """
 Catálogo e scorecard das previsões Kronos (SQLite /data).
 
-Simulação: capital 1000 USDC, margem 100 USDC × alavancagem (padrão 10x),
+Simulação: capital 1000 USDC, margem 100 USDC × alavancagem (padrão 3x v5),
 ordens LIMITE na MEXC com taxas sobre nocional (maker/taker).
 """
 
@@ -10,19 +10,17 @@ from __future__ import annotations
 import logging
 import os
 import uuid
-from datetime import datetime, timezone
-
-import pandas as pd
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from lib.db import get_conn, init_db, now_utc
-from lib.mexc_klines import bars_to_timedelta, fetch_bars_list, fetch_close_at
 
 logger = logging.getLogger(__name__)
 
 NEUTRAL_THRESHOLD_PCT = float(os.environ.get("KRONOS_BIAS_THRESHOLD_PCT", "0.30"))
 INITIAL_CAPITAL_USDC = float(os.environ.get("KRONOS_INITIAL_CAPITAL", "1000"))
 MARGIN_USDC = float(os.environ.get("KRONOS_POSITION_USDC", "100"))
-LEVERAGE = max(1.0, float(os.environ.get("KRONOS_LEVERAGE", "10")))
+LEVERAGE = max(1.0, float(os.environ.get("KRONOS_LEVERAGE", "3")))
 POSITION_USDC = MARGIN_USDC  # alias: margem por entrada
 PNL_FLAT_THRESHOLD_USDC = float(os.environ.get("KRONOS_FLAT_THRESHOLD_USDC", "0.05"))
 
@@ -116,12 +114,62 @@ def _migrate_columns(conn) -> None:
             conn.execute(f"ALTER TABLE kronos_predictions ADD COLUMN {name} {typ}")
 
 
-def _iso(ts: datetime | pd.Timestamp) -> str:
-    if isinstance(ts, pd.Timestamp):
-        ts = ts.to_pydatetime()
+def _parse_utc(value: datetime | str) -> datetime:
+    """Converte ISO/datetime do catálogo para UTC aware (sem pandas)."""
+    if isinstance(value, datetime):
+        ts = value
+    else:
+        raw = str(value).strip()
+        if raw.endswith("Z"):
+            raw = raw[:-1] + "+00:00"
+        ts = datetime.fromisoformat(raw)
     if ts.tzinfo is None:
         ts = ts.replace(tzinfo=timezone.utc)
-    return ts.astimezone(timezone.utc).isoformat(timespec="seconds")
+    return ts.astimezone(timezone.utc)
+
+
+def _iso(ts: datetime | str) -> str:
+    return _parse_utc(ts).isoformat(timespec="seconds")
+
+
+def _bars_delta(interval: str, bars: int) -> timedelta:
+    mapping = {
+        "1m": timedelta(minutes=1),
+        "5m": timedelta(minutes=5),
+        "15m": timedelta(minutes=15),
+        "30m": timedelta(minutes=30),
+        "1h": timedelta(hours=1),
+        "60m": timedelta(hours=1),
+        "4h": timedelta(hours=4),
+        "1d": timedelta(days=1),
+    }
+    delta = mapping.get(interval)
+    if not delta:
+        raise ValueError(f"Intervalo inválido: {interval}")
+    return delta * bars
+
+
+def _strip_telegram_html(text: str) -> str:
+    return (
+        text.replace("<b>", "")
+        .replace("</b>", "")
+        .replace("<i>", "")
+        .replace("</i>", "")
+        .replace("<code>", "")
+        .replace("</code>", "")
+    )
+
+
+def scorecard_snapshot_path() -> Path:
+    return Path(os.environ.get("KRONOS_SCORECARD_SNAPSHOT", "/data/kronos_scorecard_latest.txt"))
+
+
+def write_scorecard_snapshot(body: str, path: Path | None = None) -> Path:
+    """Grava o scorecard em texto para inspeção sem Telegram."""
+    dest = path or scorecard_snapshot_path()
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(_strip_telegram_html(body).rstrip() + "\n", encoding="utf-8")
+    return dest
 
 
 def _fee_usdc(notional: float, fee_pct: float) -> float:
@@ -314,9 +362,9 @@ def log_predictions(
     n = 0
     with get_conn() as conn:
         for r in results:
-            candle = pd.Timestamp(r["candle_time"]).tz_convert("UTC")
-            due_short = candle + bars_to_timedelta(interval, short_bars)
-            due_long = candle + bars_to_timedelta(interval, pred_len)
+            candle = _parse_utc(r["candle_time"])
+            due_short = candle + _bars_delta(interval, short_bars)
+            due_long = candle + _bars_delta(interval, pred_len)
             conn.execute(
                 """INSERT INTO kronos_predictions (
                     run_id, created_at, ticker, symbol, timeframe, interval,
@@ -378,9 +426,13 @@ def _result_label(pnl_usdc: float) -> str:
 
 def _score_row_short_limit(conn, row: dict, now: str) -> dict | None:
     """Scorecard curto: ordens limite + taxas MEXC."""
-    candle = pd.Timestamp(row["candle_time"]).tz_convert("UTC")
-    due = pd.Timestamp(row["due_short"]).tz_convert("UTC")
-    delta = bars_to_timedelta(row["interval"], 1)
+    # Import tardio: mexc_klines puxa pandas/OpenBLAS. Formatadores do
+    # scorecard não devem pagar isso (cron "nada novo" e /scorecard).
+    from lib.mexc_klines import fetch_bars_list, fetch_close_at
+
+    candle = _parse_utc(row["candle_time"])
+    due = _parse_utc(row["due_short"])
+    delta = _bars_delta(row["interval"], 1)
     end = due + delta * 2
 
     actual = fetch_close_at(row["symbol"], row["interval"], due)
@@ -460,7 +512,10 @@ def _score_row_short_limit(conn, row: dict, now: str) -> dict | None:
 
 def _score_row_long_market(conn, row: dict, now: str) -> dict | None:
     """Horizonte longo: close real no vencimento (sem limite, para referência)."""
-    due = pd.Timestamp(row["due_long"])
+    # Import tardio: ver _score_row_short_limit (pandas/OpenBLAS).
+    from lib.mexc_klines import fetch_close_at
+
+    due = _parse_utc(row["due_long"])
     actual = fetch_close_at(row["symbol"], row["interval"], due)
     if actual is None:
         return None

@@ -2,6 +2,11 @@
 # Backup se o daemon não gerou previsão no fechamento do candle (~8 min após :00 UTC).
 set -eu
 
+if [ -z "${RAILWAY_ENVIRONMENT:-}" ]; then
+  echo "kronos_backup: Kronos só no Railway — saindo"
+  exit 0
+fi
+
 STAMP="${KRONOS_LAST_OK:-/data/kronos.last_ok}"
 MAX_AGE_SEC="${KRONOS_BACKUP_MAX_AGE_SEC:-3300}"  # 55 min
 LOG="${1:-/data/kronos.log}"

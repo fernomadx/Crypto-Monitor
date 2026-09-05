@@ -4,6 +4,12 @@ set -eu
 
 mkdir -p /data /data/combo5 /data/mexc_analise /data/kronos/charts /data/huggingface
 
+# Evita OpenBLAS criar dezenas de threads em cada cron (scorecard/daily).
+export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-1}"
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
+export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
+export NUMEXPR_NUM_THREADS="${NUMEXPR_NUM_THREADS:-1}"
+
 echo "start: QUANT bot"
 /app/vps/ensure_quant_bot.sh || true
 

@@ -2,6 +2,10 @@
 # Evita 2 execuções simultâneas (boot + cron) que derrubam o container.
 # Uso: kronos_run.sh [log] [tf]
 #   tf: 1h | 4h | 1d (opcional — cron no fechamento do candle)
+if [ -z "${RAILWAY_ENVIRONMENT:-}" ]; then
+  echo "kronos_run: Kronos só no Railway — saindo"
+  exit 0
+fi
 LOCK="/data/kronos.signal.lock"
 LOG="${1:-/data/kronos.log}"
 TF="${2:-}"

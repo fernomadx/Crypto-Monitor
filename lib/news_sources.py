@@ -21,6 +21,37 @@ logger = logging.getLogger(__name__)
 
 CRYPTOPANIC_KEY = os.environ.get("CRYPTOPANIC_API_KEY", "")
 NEWS_API_KEY = os.environ.get("NEWS_API_KEY", "")
+_PLACEHOLDER_KEYS = {
+    "",
+    "changeme",
+    "change-me",
+    "placeholder",
+    "your_key_here",
+    "xxx",
+    "x",
+}
+
+
+def _usable_key(raw: str) -> bool:
+    key = (raw or "").strip()
+    if not key:
+        return False
+    lowered = key.lower()
+    if lowered in _PLACEHOLDER_KEYS or "placeholder" in lowered:
+        return False
+    return True
+
+
+def _log_news_http_failure(source: str, exc: Exception) -> None:
+    """403/401/429 são configuração/cota — não são falha do bot Telegram."""
+    status = getattr(getattr(exc, "response", None), "status_code", None)
+    if status in (401, 403):
+        logger.warning("%s key inválida (HTTP %s) — pulando fonte", source, status)
+        return
+    if status == 429:
+        logger.info("%s rate-limited (HTTP 429) — pulando ciclo", source)
+        return
+    logger.warning("%s fetch failed: %s", source, exc)
 
 RSS_FEEDS = {
     "coindesk": "https://www.coindesk.com/arc/outboundfeeds/rss/",
@@ -63,8 +94,8 @@ def fetch_rss(max_age_minutes: int = 20) -> list[dict]:
 
 
 def fetch_cryptopanic(max_age_minutes: int = 20) -> list[dict]:
-    if not CRYPTOPANIC_KEY:
-        logger.debug("CRYPTOPANIC_API_KEY não configurado, pulando")
+    if not _usable_key(CRYPTOPANIC_KEY):
+        logger.debug("CRYPTOPANIC_API_KEY ausente/placeholder, pulando")
         return []
     try:
         resp = requests.get(
@@ -97,13 +128,13 @@ def fetch_cryptopanic(max_age_minutes: int = 20) -> list[dict]:
             })
         return articles
     except Exception as exc:
-        logger.warning("CryptoPanic fetch failed: %s", exc)
+        _log_news_http_failure("CryptoPanic", exc)
         return []
 
 
 def fetch_newsapi(max_age_minutes: int = 20) -> list[dict]:
-    if not NEWS_API_KEY:
-        logger.debug("NEWS_API_KEY não configurado, pulando")
+    if not _usable_key(NEWS_API_KEY):
+        logger.debug("NEWS_API_KEY ausente/placeholder, pulando")
         return []
     try:
         from_dt = _recent_cutoff(max_age_minutes).strftime("%Y-%m-%dT%H:%M:%S")
@@ -131,7 +162,7 @@ def fetch_newsapi(max_age_minutes: int = 20) -> list[dict]:
             })
         return articles
     except Exception as exc:
-        logger.warning("NewsAPI fetch failed: %s", exc)
+        _log_news_http_failure("NewsAPI", exc)
         return []
 
 

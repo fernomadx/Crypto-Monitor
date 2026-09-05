@@ -8,7 +8,7 @@ restartPolicyMaxRetries = 5
 healthcheckPath = "/health"
 healthcheckTimeout = 30
 # Redeploy: Kronos daemon alerta 1H no fechamento do candle
-# PORT 8080 + webhook Telegram — /ping funciona mesmo com Hetzner em 409
+# PORT 8080 + domínio público + webhook Telegram — /ping e /scorecard no Railway
 
 # Volume montado em /data — configure no painel Railway:
 # Settings → Volumes → Mount Path: /data

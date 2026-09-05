@@ -1,6 +1,10 @@
 #!/bin/sh
 # Cron horário: 1H sempre; 4H em 0,4,8,12,16,20 UTC (após fechamento do candle).
 # Roda em sequência para não disputar o lock do kronos_run.sh.
+if [ -z "${RAILWAY_ENVIRONMENT:-}" ]; then
+  echo "kronos_candle_cron: Kronos só no Railway — saindo"
+  exit 0
+fi
 LOG="${1:-/data/kronos.log}"
 
 /app/vps/kronos_run.sh "$LOG" 1h
