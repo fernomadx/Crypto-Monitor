@@ -22,8 +22,10 @@ fi
 
 echo "  ⚠️ HTTP ${code} — restart conservador (nginx + backends óbvios)"
 
+# NÃO reiniciar o unit systemd do bot CCXT legado nem contentores *chart*.
+# Quem o liga de novo desfaz o kill do hetzner-heal-bots.sh (Bugbot PR #56).
 if command -v systemctl >/dev/null 2>&1; then
-  for svc in nginx caddy streamlit crypto-web crypto-dashboard crypto-chart-analyzer; do
+  for svc in nginx caddy streamlit crypto-web crypto-dashboard; do
     if systemctl list-unit-files --no-legend 2>/dev/null | grep -q "^${svc}\.service"; then
       echo "  → systemctl restart ${svc}"
       systemctl restart "${svc}" || true
@@ -32,7 +34,7 @@ if command -v systemctl >/dev/null 2>&1; then
 fi
 
 if command -v docker >/dev/null 2>&1; then
-  mapfile -t names < <(docker ps -a --format '{{.Names}}' | grep -iE 'streamlit|nginx|web|app|dashboard|chart' || true)
+  mapfile -t names < <(docker ps -a --format '{{.Names}}' | grep -iE 'streamlit|nginx|web|app|dashboard' || true)
   if [ "${#names[@]}" -gt 0 ]; then
     for name in "${names[@]}"; do
       echo "  → docker restart $name"
