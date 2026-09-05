@@ -80,21 +80,21 @@ COMBO5_FORCE_STATUS=1 python /app/vps/combo5_signal.py >> /data/combo5.log 2>&1 
 echo "MEXC Análise: daemon alerts (15s)..."
 MEXC_ANALISE_NOTIFY=1 /app/vps/ensure_mexc_analise.sh || true
 
-echo "Hetzner: desligando Kronos duplicado (todo boot)..."
+echo "Hetzner: heal BTCCURSOR 204 + ATLAS 77 (todo boot)..."
 python - <<'PY' || true
 import os, sys
 sys.path.insert(0, "/app")
 host = os.environ.get("VPS_HOST", "204.168.179.200").strip()
 if not os.environ.get("VPS_SSH_PRIVATE_KEY") and not os.path.isfile("/data/vps_ssh_key"):
-    print("hetzner disable: sem VPS_SSH_PRIVATE_KEY — Console Hetzner ou /vps test")
+    print("hetzner heal: sem VPS_SSH_PRIVATE_KEY — Console Hetzner ou /vps test")
     raise SystemExit(0)
 try:
     from lib import vps_config
-    from vps.hetzner_remote import sync_and_test
+    from vps.hetzner_remote import heal_all
     if not vps_config.get_host():
         vps_config.set_host(host)
-    msg = sync_and_test(host)
+    msg = heal_all()
     print(msg.replace("<b>", "").replace("</b>", "").replace("<code>", "").replace("</code>", ""))
 except Exception as exc:
-    print("hetzner disable:", exc)
+    print("hetzner heal:", exc)
 PY
