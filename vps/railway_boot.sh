@@ -90,7 +90,9 @@ if not os.environ.get("VPS_SSH_PRIVATE_KEY") and not os.path.isfile("/data/vps_s
     raise SystemExit(0)
 try:
     from lib import vps_config
-    from vps.hetzner_remote import heal_all
+    from vps.hetzner_remote import DEFAULT_BTCCURSOR_HOST, heal_all, is_atlas_host
+    if is_atlas_host(host):
+        host = DEFAULT_BTCCURSOR_HOST
     if not vps_config.get_host():
         vps_config.set_host(host)
     msg = heal_all()
