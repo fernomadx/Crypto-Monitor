@@ -25,14 +25,12 @@ AUTH_HINT = (
 )
 
 # Heal completo no 204: sync main, Kronos off, COMBO5 on, CCXT morto, nginx se 502.
-REMOTE_BOOTSTRAP = r"""
+REMOTE_BOOTSTRAP = """
 set -e
 export REPO_DIR=/opt/crypto-monitor
-if [ -d \"$REPO_DIR/.git\" ]; then
-  cd \"$REPO_DIR\" && git fetch origin && git reset --hard origin/main
-  chmod +x vps/hetzner_disable_kronos.sh vps/hetzner_test.sh \\
-    scripts/hetzner-kill-legacy-mexc.sh scripts/hetzner-heal-bots.sh \\
-    scripts/hetzner-heal-204.sh 2>/dev/null || true
+if [ -d "$REPO_DIR/.git" ]; then
+  cd "$REPO_DIR" && git fetch origin && git reset --hard origin/main
+  chmod +x vps/hetzner_disable_kronos.sh vps/hetzner_test.sh scripts/hetzner-kill-legacy-mexc.sh scripts/hetzner-heal-bots.sh scripts/hetzner-heal-204.sh 2>/dev/null || true
   bash vps/hetzner_disable_kronos.sh
   if [ -f scripts/hetzner-heal-bots.sh ]; then
     bash scripts/hetzner-heal-bots.sh
