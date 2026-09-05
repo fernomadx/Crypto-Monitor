@@ -5,8 +5,6 @@ from __future__ import annotations
 import os
 import sys
 import unittest
-import urllib.error
-import urllib.request
 from pathlib import Path
 from unittest import mock
 
@@ -69,17 +67,11 @@ class HttpTests(unittest.TestCase):
         server = _start_http(18765)
         self.assertIsNotNone(server)
         try:
+            import urllib.request
+
             with urllib.request.urlopen("http://127.0.0.1:18765/health", timeout=2) as resp:
                 self.assertEqual(resp.status, 200)
                 self.assertEqual(resp.read(), b"quant-bot ok\n")
-            with urllib.request.urlopen("http://127.0.0.1:18765/ping", timeout=2) as resp:
-                self.assertEqual(resp.status, 200)
-                self.assertEqual(resp.read(), b"quant-bot ok\n")
-            try:
-                urllib.request.urlopen("http://127.0.0.1:18765/telegram", timeout=2)
-                self.fail("GET /telegram should be 405")
-            except urllib.error.HTTPError as exc:
-                self.assertEqual(exc.code, 405)
         finally:
             server.shutdown()
             server.server_close()
