@@ -305,15 +305,19 @@ def _handle_reset_scorecard() -> str:
 
 def _handle_vps(args: str) -> str:
     from lib import vps_config
-    from vps.hetzner_remote import heal_all, heal_atlas, sync_and_test
+    from vps.hetzner_remote import heal_all, heal_atlas, is_atlas_host, sync_and_test
+
     sub = args.strip().lower()
     if sub in ("", "status", "info"):
         return vps_config.status_text()
     if sub in ("test", "sync", "check", "heal"):
         return heal_all()
-    if sub in ("atlas", "77"):
-        return heal_atlas()
-    ip = args.strip().split()[0]
+    token = args.strip().split()[0] if args.strip() else ""
+    if is_atlas_host(token):
+        # /vps 77.42.126.222 NÃO pode persistir 77 como host BTCCURSOR
+        # nem correr REMOTE_BOOTSTRAP (COMBO5/nginx do 204) na ATLAS.
+        return heal_atlas(None if token.lower() in {"atlas", "77"} else token)
+    ip = token
     try:
         vps_config.set_host(ip)
     except ValueError as exc:
