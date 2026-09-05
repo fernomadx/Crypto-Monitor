@@ -58,8 +58,8 @@ if [ -d "$REPO_DIR/.git" ]; then
   fi
   bash vps/hetzner_test.sh
 else
-  curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/scripts/hetzner-heal-bots.sh | bash
   curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/vps/hetzner_disable_kronos.sh | bash || true
+  curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/scripts/hetzner-heal-bots.sh | bash || true
   curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/main/scripts/hetzner-heal-204.sh | bash || true
 fi
 """
@@ -68,11 +68,14 @@ fi
 def default_btccursor_host() -> str:
     from lib.vps_config import get_host
 
-    return (
-        os.environ.get("VPS_HOST", "").strip()
-        or get_host()
-        or DEFAULT_BTCCURSOR_HOST
-    )
+    for candidate in (
+        os.environ.get("VPS_HOST", "").strip(),
+        get_host(),
+        DEFAULT_BTCCURSOR_HOST,
+    ):
+        if candidate and not is_atlas_host(candidate):
+            return candidate
+    return DEFAULT_BTCCURSOR_HOST
 
 
 def default_atlas_host() -> str:
@@ -166,6 +169,10 @@ def sync_and_test(host: str | None = None) -> str:
 
     if not re.match(r"^(?:\d{1,3}\.){3}\d{1,3}$", target):
         return f"⚠️ IPv4 inválido: {target}"
+
+    if is_atlas_host(target):
+        # Persistido 77 (bug antigo /vps) nunca corre REMOTE_BOOTSTRAP do 204.
+        return heal_atlas(target)
 
     try:
         code, out, err = ssh_run(target, REMOTE_BOOTSTRAP)

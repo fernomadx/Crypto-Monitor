@@ -48,6 +48,16 @@ class RecordSyncSlotTests(unittest.TestCase):
         self.assertIn("❌", text)
         self.assertIn("✅", text)
 
+    def test_get_host_skips_persisted_atlas(self) -> None:
+        vps_config.set_host("204.168.179.200")
+        data = vps_config.load()
+        data["host"] = "77.42.126.222"
+        vps_config.save(data)
+        self.assertEqual(vps_config.get_host(), "")
+        with self.assertRaises(ValueError) as ctx:
+            vps_config.set_host("77.42.126.222")
+        self.assertIn("ATLAS", str(ctx.exception))
+
 
 class HandleVpsRoutingTests(unittest.TestCase):
     def test_atlas_ip_does_not_set_btccursor_host(self) -> None:

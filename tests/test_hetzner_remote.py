@@ -62,7 +62,34 @@ class HealRoutingTests(unittest.TestCase):
         self.assertIn("hetzner-heal-204.sh", hetzner_remote.REMOTE_BOOTSTRAP)
         self.assertIn("hetzner_disable_kronos.sh", hetzner_remote.REMOTE_BOOTSTRAP)
         else_branch = hetzner_remote.REMOTE_BOOTSTRAP.split("else", 1)[1]
-        self.assertIn("hetzner_disable_kronos.sh", else_branch)
+        disable_at = else_branch.find("hetzner_disable_kronos.sh")
+        bots_at = else_branch.find("hetzner-heal-bots.sh")
+        self.assertGreater(disable_at, -1)
+        self.assertGreater(bots_at, -1)
+        self.assertLess(disable_at, bots_at)
+        self.assertIn("hetzner-heal-bots.sh | bash || true", else_branch)
+
+    def test_default_btccursor_ignores_persisted_atlas(self) -> None:
+        os.environ.pop("VPS_HOST", None)
+        with mock.patch("lib.vps_config.get_host", return_value="77.42.126.222"):
+            self.assertEqual(
+                hetzner_remote.default_btccursor_host(),
+                hetzner_remote.DEFAULT_BTCCURSOR_HOST,
+            )
+        os.environ["VPS_HOST"] = "77.42.126.222"
+        self.assertEqual(
+            hetzner_remote.default_btccursor_host(),
+            hetzner_remote.DEFAULT_BTCCURSOR_HOST,
+        )
+
+    def test_sync_and_test_routes_atlas_to_heal_atlas(self) -> None:
+        with mock.patch.object(
+            hetzner_remote, "heal_atlas", return_value="ATLAS-ONLY"
+        ) as atlas, mock.patch.object(hetzner_remote, "ssh_run") as ssh:
+            body = hetzner_remote.sync_and_test("77.42.126.222")
+        self.assertEqual(body, "ATLAS-ONLY")
+        atlas.assert_called_once_with("77.42.126.222")
+        ssh.assert_not_called()
 
     def test_is_atlas_host(self) -> None:
         self.assertTrue(hetzner_remote.is_atlas_host("atlas"))
