@@ -160,12 +160,22 @@ def simulate_trades(
     lows = df_5m["low"].to_numpy(dtype=float)
     closes = df_5m["close"].to_numpy(dtype=float)
 
-    # v2 / v2-short: hold mais longo; BE fee-aware
-    if version in ("v2", "v2-short"):
-        max_bars_hold = max(max_bars_hold, 144)  # 12h
+    # Perfis de saída por versão
+    max_stop_pct_filter: float | None = None
+    if version == "v2-short":
+        # Melhoria PnL: winners vivem no timeout → hold 24h; BE só após 2.5R;
+        # descarta stops >1% (ruído / setups ruins).
+        max_bars_hold = max(max_bars_hold, 288)
         min_be_profit_pct = fee_pct * 2.5
+        short_be_r = 2.5
+        max_stop_pct_filter = 1.0
+    elif version == "v2":
+        max_bars_hold = max(max_bars_hold, 144)
+        min_be_profit_pct = fee_pct * 2.5
+        short_be_r = 1.2
     else:
         min_be_profit_pct = 0.0
+        short_be_r = max(be_trigger_r, 1.0)
 
     for sig in signals:
         i = sig.bar_idx
@@ -186,6 +196,18 @@ def simulate_trades(
         if risk <= 0:
             continue
 
+        stop_pct = risk / entry * 100.0
+        if max_stop_pct_filter is not None and stop_pct > max_stop_pct_filter:
+            continue
+        if version == "v2-short" and stop_pct < 0.05:
+            continue
+
+        # Garante R:R mínimo no alvo
+        if side == Side.SHORT and (entry - target) / risk < 2.0:
+            target = entry - risk * 2.0
+        if side == Side.LONG and (target - entry) / risk < 2.0:
+            target = entry + risk * 2.0
+
         exit_px = None
         exit_idx = i
         result = "timeout"
@@ -194,12 +216,10 @@ def simulate_trades(
         for j in range(i + 1, end_j + 1):
             hi, lo = float(highs[j]), float(lows[j])
 
-            # BE: v1 rápido em retração; v2 seletivo + fee-aware
-            if version in ("v2", "v2-short"):
-                if sig.is_counter_trend:
-                    be_r = max(be_trigger_r, 0.8)
-                else:
-                    be_r = max(be_trigger_r, 1.2)
+            if version == "v2-short":
+                be_r = short_be_r
+            elif version == "v2":
+                be_r = 0.8 if sig.is_counter_trend else short_be_r
             else:
                 be_r = (
                     be_trigger_r
@@ -214,7 +234,6 @@ def simulate_trades(
                 elif side == Side.SHORT and lo <= entry - be_r * risk:
                     moved = True
                 if moved:
-                    # Só BE se o movimento a favor já cobrir taxa (evita flat-$0.04)
                     favor_pct = be_r * risk / entry * 100.0
                     if favor_pct >= min_be_profit_pct:
                         stop = entry
