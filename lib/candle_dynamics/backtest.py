@@ -2,7 +2,8 @@
 Simulador de backtest — Candle Dynamics.
 
 Regras de proteção (seção 5):
-  - Move stop para zero-a-zero assim que a operação anda a favor (BE)
+  - v1/v2: move stop para BE após movimento a favor
+  - v2-short: após 3R a favor, trava stop em +1R (profit-lock); hold até 36h
   - Em retração contra a tendência: parcial na região de 50%
   - Só opera em zona (já filtrado nos sinais)
 """
@@ -197,8 +198,8 @@ def simulate_trades(
     version: str = "v1",
     initial_capital: float = 1000.0,
     sizing: str = "fixed",  # fixed | risk
-    risk_pct: float = 1.0,  # % do equity arriscado no stop (sizing=risk)
-    max_leverage: float = 5.0,
+    risk_pct: float = 2.0,  # % do equity arriscado no stop (sizing=risk)
+    max_leverage: float = 8.0,
 ) -> list[Trade]:
     trades: list[Trade] = []
     occupied_until = -1
@@ -210,10 +211,14 @@ def simulate_trades(
 
     # Perfis de saída por versão
     max_stop_pct_filter: float | None = None
+    # profit_lock: (activate_R, floor_R) — após activate_R a favor, stop trava +floor_R
+    profit_lock: tuple[float, float] | None = None
     if version == "v2-short":
-        max_bars_hold = max(max_bars_hold, 288)
+        # 36h hold + lock +1R após 3R (melhor CAGR/PF vs BE flat @2.5R)
+        max_bars_hold = max(max_bars_hold, 432)
         min_be_profit_pct = fee_pct * 2.5
-        short_be_r = 2.5
+        short_be_r = 99.0  # desativa BE clássico; usa profit_lock
+        profit_lock = (3.0, 1.0)
         max_stop_pct_filter = 1.0
     elif version == "v2":
         max_bars_hold = max(max_bars_hold, 144)
@@ -291,7 +296,17 @@ def simulate_trades(
                     else max(be_trigger_r, 1.0)
                 )
 
-            if not be_moved:
+            favor_r = ((hi - entry) / risk) if side == Side.LONG else ((entry - lo) / risk)
+
+            if profit_lock is not None:
+                act_r, floor_r = profit_lock
+                if favor_r >= act_r:
+                    if side == Side.LONG:
+                        stop = entry + floor_r * risk
+                    else:
+                        stop = entry - floor_r * risk
+                    be_moved = True
+            elif not be_moved:
                 moved = False
                 if side == Side.LONG and hi >= entry + be_r * risk:
                     moved = True
@@ -320,20 +335,32 @@ def simulate_trades(
                     size -= partial_frac
                     partial_taken = True
 
+            locked_gain = be_moved and (
+                (side == Side.LONG and stop > entry + 1e-12)
+                or (side == Side.SHORT and stop < entry - 1e-12)
+            )
             if side == Side.LONG:
                 if lo <= stop:
-                    exit_px, exit_idx, result = stop, j, (
-                        "flat" if be_moved and abs(stop - entry) < 1e-9 else "loss"
-                    )
+                    if locked_gain:
+                        tag = "gain"
+                    elif be_moved and abs(stop - entry) < 1e-9:
+                        tag = "flat"
+                    else:
+                        tag = "loss"
+                    exit_px, exit_idx, result = stop, j, tag
                     break
                 if hi >= target:
                     exit_px, exit_idx, result = target, j, "gain"
                     break
             else:
                 if hi >= stop:
-                    exit_px, exit_idx, result = stop, j, (
-                        "flat" if be_moved and abs(stop - entry) < 1e-9 else "loss"
-                    )
+                    if locked_gain:
+                        tag = "gain"
+                    elif be_moved and abs(stop - entry) < 1e-9:
+                        tag = "flat"
+                    else:
+                        tag = "loss"
+                    exit_px, exit_idx, result = stop, j, tag
                     break
                 if lo <= target:
                     exit_px, exit_idx, result = target, j, "gain"
@@ -398,8 +425,8 @@ def run_backtest(
     position_usdc: float = 100.0,
     version: str = "v1",
     sizing: str = "fixed",
-    risk_pct: float = 1.0,
-    max_leverage: float = 5.0,
+    risk_pct: float = 2.0,
+    max_leverage: float = 8.0,
     **signal_kwargs: Any,
 ) -> BacktestResult:
     # Default realista para v2-short: sizing por risco (senão retorno absoluto fica irrelevante)

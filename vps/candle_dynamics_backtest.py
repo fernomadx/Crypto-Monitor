@@ -4,13 +4,13 @@ Backtest Candle Dynamics — BTC últimos N anos.
 
 Uso:
   python vps/candle_dynamics_backtest.py --years 5 --version v2-short
-  python vps/candle_dynamics_backtest.py --years 5 --version v2-short --sizing risk --risk-pct 1.5
+  python vps/candle_dynamics_backtest.py --years 5 --version v2-short --sizing risk --risk-pct 2 --max-leverage 8
   python vps/candle_dynamics_backtest.py --years 5 --compare
 
 Sizing:
   fixed — notional fixo (--position), útil p/ comparar setups
   risk  — arrisca --risk-pct% do equity no stop, alavancagem até --max-leverage (compound)
-          Padrão recomendado para v2-short (retorno absoluto realista)
+          Padrão v2-short: risk 2% / max 8x + profit-lock 3R→1R / hold 36h
 """
 
 from __future__ import annotations
@@ -118,8 +118,8 @@ def main() -> int:
         default="auto",
         help="auto: risk para v2-short, fixed para demais",
     )
-    p.add_argument("--risk-pct", type=float, default=1.5, help="% equity no stop (sizing=risk)")
-    p.add_argument("--max-leverage", type=float, default=5.0)
+    p.add_argument("--risk-pct", type=float, default=2.0, help="% equity no stop (sizing=risk)")
+    p.add_argument("--max-leverage", type=float, default=8.0)
     p.add_argument(
         "--compare",
         action="store_true",

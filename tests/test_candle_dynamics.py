@@ -158,7 +158,7 @@ def test_risk_sizing_scales_pnl():
     )
     risk = run_backtest(
         df_5m, df_30m, df_1h, df_1d, df_1w,
-        version="v2-short", sizing="risk", risk_pct=1.5, max_leverage=5.0, zone_tol_pct=8.0,
+        version="v2-short", sizing="risk", risk_pct=2.0, max_leverage=8.0, zone_tol_pct=8.0,
     )
     assert risk.summary()["sizing"] == "risk"
     assert "return_pct" in risk.summary()
@@ -166,4 +166,57 @@ def test_risk_sizing_scales_pnl():
     # Com trades, risk sizing tipicamente move mais capital que $100 fixo
     if fixed.n > 0 and risk.n > 0:
         assert any(t.notional > 100 for t in risk.trades) or risk.n >= 0
+
+
+def test_v2_short_profit_lock_on_short_runner():
+    """Após 3R a favor no short, stop trava em +1R (não volta a BE flat)."""
+    n = 80
+    ts = pd.date_range("2024-01-01", periods=n, freq="5min", tz="UTC")
+    entry = 100.0
+    # Barras: flat → dump 3.5R → retrace até +1R lock
+    close = np.full(n, entry)
+    high = np.full(n, entry)
+    low = np.full(n, entry)
+    open_ = np.full(n, entry)
+    # bar 10 entry context; move down from bar 11
+    for j in range(11, 20):
+        close[j] = entry - 3.5  # 3.5R if risk=1
+        low[j] = entry - 3.5
+        high[j] = entry - 3.2
+        open_[j] = entry - 3.0
+    for j in range(20, 30):
+        close[j] = entry - 1.0  # hits +1R lock stop
+        low[j] = entry - 1.2
+        high[j] = entry - 0.9
+        open_[j] = entry - 1.5
+    df = pd.DataFrame(
+        {
+            "timestamps": ts,
+            "open": open_,
+            "high": high,
+            "low": low,
+            "close": close,
+            "volume": np.ones(n),
+            "open_time": (ts.asi8 // 10**6),
+        }
+    )
+    sig = Signal(
+        bar_idx=10,
+        ts=df.loc[10, "timestamps"],
+        side=Side.SHORT,
+        kind=SetupKind.IMPULSE_SHORT,
+        entry=entry,
+        stop=entry + 1.0,
+        target=entry - 10.0,
+        partial_target=None,
+        is_counter_trend=False,
+        reason="test_lock",
+    )
+    trades = simulate_trades(df, [sig], version="v2-short", sizing="fixed", position_usdc=100.0)
+    assert len(trades) == 1
+    t = trades[0]
+    assert t.result == "gain"
+    assert t.be_moved
+    assert t.exit < entry  # locked profit below entry on short
+    assert abs(t.exit - (entry - 1.0)) < 1e-6
 

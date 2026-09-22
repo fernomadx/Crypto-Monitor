@@ -20,7 +20,7 @@ Dados: Binance Vision (mensal) + fill do mês corrente via MEXC. Cache em `data/
 | Compra (gap/retração) | Zona D/W (fundo ou 50% diário) + microfalha de baixa |
 | Venda (impulsão) | Zona 50% M30/H1 **e** resistência D/W + microfalha de alta + viés H1 bear; **não** vende no fundo pós gap-down |
 | Hierarquia | M5 confirma; M30/H1 estrutura; D/W alvos. Sem antecipar fechamento |
-| Risco | BE após movimento a favor; parcial no 50% em retração contra tendência |
+| Risco | v2-short: lock +1R após 3R (não BE flat); parcial 50% em retração CT |
 
 ## Resultado BTC 5 anos — v1 vs v2 (2021-09-22 → 2026-09-22)
 
@@ -46,24 +46,31 @@ Posição $100 / capital $1000.
 - `impulse_short`: 153 trades, **+$13.92**, WR 25%
 - `failure_long` restante: 88 trades, **−$20.64**, WR 2.1% ← ainda sangra
 
-### Ablation `v2-short` — sizing por risco (retorno absoluto)
+### Ablation `v2-short` — sizing + profit-lock (retorno absoluto)
 
-O +$35 com posição fixa $100 era **subutilização de capital** (~10% do equity, ~2% do tempo no mercado).
-Com sizing realista de futures (arrisca % do equity no stop, compound, alavancagem limitada):
+O +$35 com posição fixa $100 era **subutilização de capital**. Bottleneck seguinte:
+alavancagem média ~4.7x no teto de 5x, e BE flat @2.5R transformava runners em zeros.
 
-| | Fixo $100 | **Risk 1.5% / max 5x** |
-|--|-----------|------------------------|
-| Equity | $1 036 | **$3 499** |
-| Retorno 5y | +3.6% | **+249.9%** |
-| CAGR | ~0.7% | **+28.5%** |
-| PF | 2.87 | 2.46 |
-| Max DD | 0.4% | 27.8% |
-| Avg lev | — | 4.7x |
+Perfil atual (padrão CLI): **risk 2% / max 8x**, hold **36h**, stop trava **+1R após 3R**
+(em vez de BE na entrada).
 
-PnL positivo em todos os anos 2022–2026 também no modo risk.
+| | Fixo $100 | Risk 1.5%/5x BE@2.5R | **Risk 2%/8x lock 3→1** |
+|--|-----------|----------------------|-------------------------|
+| Equity | $1 036 | $3 499 | **$7 960** |
+| Retorno 5y | +3.6% | +249.9% | **+696.0%** |
+| CAGR | ~0.7% | +28.5% | **+51.4%** |
+| PF | 2.87 | 2.46 | **2.89** |
+| Max DD | 0.4% | 27.8% | **57.1%** |
+| Avg lev | — | 4.7x | **7.2x** |
+| Win rate | — | — | **44.6%** |
+
+PnL positivo em todos os anos 2022–2026. DD maior é o preço do compound com lev 8x.
 
 ```bash
-# Retorno absoluto (recomendado)
+# Retorno absoluto (recomendado — defaults)
+python vps/candle_dynamics_backtest.py --years 5 --version v2-short --sizing risk
+
+# Conservador (1.5% / 5x)
 python vps/candle_dynamics_backtest.py --years 5 --version v2-short --sizing risk --risk-pct 1.5 --max-leverage 5
 
 # Comparar setups com notional fixo
