@@ -1,6 +1,7 @@
 # Decisões e contexto (linha do tempo)
 
-- **Candle Dynamics backtest BTC 5y (2026-09)** — v1 INVALIDATED. v2 flat. **v2-short** + sizing risk 1.5%/max5x: **+$2499 (+250%, CAGR 28.5%)** em $1000; fixo $100 era só +3.6% (subuso de capital). CLI `--sizing risk`.
+- **Candle Dynamics audit $7960 (2026-09-22)** — aritmética OK, mas **look-ahead** no close H1 da hora aberta inflava o resultado. Com H1 só fechado: **$1000 → $431 (−57%, INVALIDATED)**. Antes (viesado): +696%.
+- **Candle Dynamics backtest BTC 5y (2026-09)** — v1/v2 INVALIDATED. v2-short com profit-lock/risk sizing **não sobrevive** após correção de look-ahead H1.
 - **MEXC Análise spam 2 min (2026-08-29)** — cron `*/2` + `ensure_mexc_analise.sh` usava `ps -ef` (não existe no python:slim, só `pgrep` estava documentado como ausente). Watchdog achava que o daemon morreu e relançava a cada 2 min; cada start mandava **Bot iniciado**. Fix: detectar via `/proc/*/cmdline`, lock exclusivo, banner só no boot (`MEXC_ANALISE_NOTIFY=1`), watchdog silencioso, `procps` no Dockerfile. Alertas de **SINAL COMPRA/VENDA** (e FILL/STOP/TAKE) seguem no Telegram no fechamento do candle 1h.
 - **MEXC Análise in-repo (2026-08)** — `/mexc` no QUANT bot + `vps/mexc_analise.py` substituem o CCXT `📊 MEXC Análise` (RequestTimeout). Futures 4h usa `Hour4` (`Min240` = code 600). Spot + funding + basis no mesmo relatório. Daemon de alerts (BTC 1h, 20x, poll 15s) no Railway.
 - **Hetzner bots parados (2026-08-27)** — `quant_bot` na VPS + Railway no mesmo `TELEGRAM_BOT_TOKEN` → Telegram 409 (getUpdates). SSH 22 no IP `204.168.179.200` timeout. Fix: webhook Telegram no Railway (`PORT` + `RAILWAY_PUBLIC_DOMAIN`) para comandos sobreviverem ao poller da VPS; `QUANT_BOT_ENABLED=0` na Hetzner; heal `scripts/hetzner-heal-bots.sh`.

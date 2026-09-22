@@ -6,7 +6,7 @@ gap do pregão, hierarquia multi-TF e regras de proteção.
 ## Como rodar
 
 ```bash
-python vps/candle_dynamics_backtest.py --years 5 --symbol BTCUSDT
+python vps/candle_dynamics_backtest.py --years 5 --version v2-short
 python vps/candle_dynamics_backtest.py --years 5 --json-out data/candle_dynamics/btc_5y_report.json
 ```
 
@@ -20,54 +20,44 @@ Dados: Binance Vision (mensal) + fill do mês corrente via MEXC. Cache em `data/
 | Compra (gap/retração) | Zona D/W (fundo ou 50% diário) + microfalha de baixa |
 | Venda (impulsão) | Zona 50% M30/H1 **e** resistência D/W + microfalha de alta + viés H1 bear; **não** vende no fundo pós gap-down |
 | Hierarquia | M5 confirma; M30/H1 estrutura; D/W alvos. Sem antecipar fechamento |
-| Risco | BE após movimento a favor; parcial no 50% em retração contra tendência |
+| Risco | v2-short: lock +1R após 3R; hold 36h; swings HTF com `shift(1)`; viés H1 só com hora **fechada** |
 
-## Resultado BTC 5 anos — v1 vs v2 (2021-09-22 → 2026-09-22)
+## Auditoria do “$1000 → $7960” (2026-09-22)
 
-Posição $100 / capital $1000.
+### O que passava
+- Soma dos trades = +$6960 → equity $7960 (aritmética OK)
+- Sizing/stop/leverage por trade consistente; sem overlap; entry = close M5
 
-| Métrica | v1 | v2 | Δ |
-|---------|----|----|---|
-| Trades | 2 433 | 241 | −2 192 |
-| Win rate | 19.4% | 15.5% | −3.9 pp |
-| PnL | −$181.83 | −$6.72 | **+$175** |
-| Equity | $818 | $993 | +$175 |
-| Profit factor | 0.59 | 0.96 | +0.37 |
-| Max DD | $186.72 | $15.01 | **−$172** |
-| Veredito | INVALIDATED | INVALIDATED | — |
+### O que invalidava o número
+1. **Look-ahead no viés H1** — `htf_bear` usava o **close final** da hora ainda aberta (resample full-history). Em **96%** dos trades o close H1 mudava depois da entrada; **61/154** sinais só existiam porque a hora *depois* fechou bear.
+2. Com viés H1 só em candle fechado: equity cai de **$7960 → ~$431 (−57%)**, PF 0.49 → **INVALIDATED**.
+3. Fee 0.04% RT otimista; com slip ~5 bps/lado o cenário viesado já caía para ~$3k.
+4. Top 3 trades = **52%** do PnL viesado (concentração).
+5. Max DD% reportado era vs capital inicial (57%); vs pico era ~10%.
 
-### O que o v2 mudou
-1. Long só gap-retrace / fundo semanal (sem `failure_long` genérico no mid diário)
-2. Short exige impulsão de alta no **M30** antes da microfalha M5
-3. BE seletivo + fee-aware; hold até 12h
-4. Cooldown 6h + 1 setup por zona D/W + corpo mínimo no candle
+### Resultado honesto BTC 5y — v2-short (pós-correção)
 
-### Por tipo (v2)
-- `impulse_short`: 153 trades, **+$13.92**, WR 25%
-- `failure_long` restante: 88 trades, **−$20.64**, WR 2.1% ← ainda sangra
+Capital $1000 · risk 2% · max 8x · profit-lock 3R→1R · hold 36h · **H1 close só fechado**
 
-### Ablation `v2-short` — sizing por risco (retorno absoluto)
-
-O +$35 com posição fixa $100 era **subutilização de capital** (~10% do equity, ~2% do tempo no mercado).
-Com sizing realista de futures (arrisca % do equity no stop, compound, alavancagem limitada):
-
-| | Fixo $100 | **Risk 1.5% / max 5x** |
-|--|-----------|------------------------|
-| Equity | $1 036 | **$3 499** |
-| Retorno 5y | +3.6% | **+249.9%** |
-| CAGR | ~0.7% | **+28.5%** |
-| PF | 2.87 | 2.46 |
-| Max DD | 0.4% | 27.8% |
-| Avg lev | — | 4.7x |
-
-PnL positivo em todos os anos 2022–2026 também no modo risk.
+| Métrica | Valor |
+|---------|-------|
+| Trades | 135 |
+| Win rate | 17.8% |
+| PnL | **−$569** |
+| Equity | **$431** |
+| Retorno / CAGR | −56.9% / −15.5% |
+| Profit factor | 0.49 |
+| Max DD | 63.2% |
+| Veredito | **INVALIDATED** |
 
 ```bash
-# Retorno absoluto (recomendado)
-python vps/candle_dynamics_backtest.py --years 5 --version v2-short --sizing risk --risk-pct 1.5 --max-leverage 5
-
-# Comparar setups com notional fixo
-python vps/candle_dynamics_backtest.py --years 5 --version v2-short --sizing fixed --position 100
-python vps/candle_dynamics_backtest.py --years 5 --compare
+python vps/candle_dynamics_backtest.py --years 5 --version v2-short --sizing risk
 ```
 
+## Resultado BTC 5 anos — v1 vs v2 (fixed $100, referência)
+
+| Métrica | v1 | v2 |
+|---------|----|----|
+| Trades | 2 433 | 241 |
+| PnL | −$181.83 | −$6.72 |
+| Veredito | INVALIDATED | INVALIDATED |
