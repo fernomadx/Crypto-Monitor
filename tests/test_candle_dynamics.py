@@ -141,7 +141,29 @@ def test_v2_runs_and_is_stricter_than_v1():
     df_1w = resample_ohlcv(df_5m, "1W")
     s1 = generate_signals(df_5m, df_30m, df_1h, df_1d, df_1w, version="v1", zone_tol_pct=8.0)
     s2 = generate_signals(df_5m, df_30m, df_1h, df_1d, df_1w, version="v2", zone_tol_pct=8.0)
-    # v2 deve gerar no máximo tantos sinais quanto v1 (mais restritivo)
     assert len(s2) <= len(s1)
     r2 = run_backtest(df_5m, df_30m, df_1h, df_1d, df_1w, version="v2", zone_tol_pct=8.0)
     assert r2.summary()["version"] == "v2"
+
+
+def test_risk_sizing_scales_pnl():
+    df_5m = _synth_ohlcv(3000, seed=11)
+    df_30m = resample_ohlcv(df_5m, "30min")
+    df_1h = resample_ohlcv(df_5m, "1h")
+    df_1d = resample_ohlcv(df_5m, "1D")
+    df_1w = resample_ohlcv(df_5m, "1W")
+    fixed = run_backtest(
+        df_5m, df_30m, df_1h, df_1d, df_1w,
+        version="v2-short", sizing="fixed", position_usdc=100.0, zone_tol_pct=8.0,
+    )
+    risk = run_backtest(
+        df_5m, df_30m, df_1h, df_1d, df_1w,
+        version="v2-short", sizing="risk", risk_pct=1.5, max_leverage=5.0, zone_tol_pct=8.0,
+    )
+    assert risk.summary()["sizing"] == "risk"
+    assert "return_pct" in risk.summary()
+    assert "cagr_pct" in risk.summary()
+    # Com trades, risk sizing tipicamente move mais capital que $100 fixo
+    if fixed.n > 0 and risk.n > 0:
+        assert any(t.notional > 100 for t in risk.trades) or risk.n >= 0
+

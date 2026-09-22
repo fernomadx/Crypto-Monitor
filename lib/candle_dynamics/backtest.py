@@ -32,6 +32,10 @@ class Trade:
     be_moved: bool = False
     partial_taken: bool = False
     entry_ts: str = ""
+    stop: float = 0.0
+    notional: float = 0.0
+    leverage_used: float = 0.0
+    equity_before: float = 0.0
 
 
 @dataclass
@@ -44,6 +48,9 @@ class BacktestResult:
     trades: list[Trade] = field(default_factory=list)
     initial_capital: float = 1000.0
     position_usdc: float = 100.0
+    sizing: str = "fixed"
+    risk_pct: float = 0.0
+    max_leverage: float = 1.0
 
     @property
     def n(self) -> int:
@@ -60,6 +67,25 @@ class BacktestResult:
     @property
     def total_pnl(self) -> float:
         return sum(t.pnl_usdc for t in self.trades)
+
+    @property
+    def final_equity(self) -> float:
+        return self.initial_capital + self.total_pnl
+
+    @property
+    def return_pct(self) -> float:
+        if self.initial_capital <= 0:
+            return 0.0
+        return 100.0 * self.total_pnl / self.initial_capital
+
+    @property
+    def cagr_pct(self) -> float:
+        """CAGR aproximado pelo horizonte calendário do backtest."""
+        days = max((self.end - self.start).total_seconds() / 86400.0, 1.0)
+        years = days / 365.25
+        if years <= 0 or self.initial_capital <= 0 or self.final_equity <= 0:
+            return 0.0
+        return 100.0 * ((self.final_equity / self.initial_capital) ** (1.0 / years) - 1.0)
 
     @property
     def win_rate(self) -> float:
@@ -87,6 +113,12 @@ class BacktestResult:
             max_dd = max(max_dd, peak - equity)
         return max_dd
 
+    @property
+    def max_drawdown_pct(self) -> float:
+        if self.initial_capital <= 0:
+            return 0.0
+        return 100.0 * self.max_drawdown_usdc / self.initial_capital
+
     def summary(self) -> dict[str, Any]:
         by_kind: dict[str, dict[str, float | int]] = {}
         for t in self.trades:
@@ -100,10 +132,14 @@ class BacktestResult:
 
         by_year: dict[str, dict[str, float | int]] = {}
         for t in self.trades:
-            year = (t.entry_ts[:4] if t.entry_ts else "unknown")
+            year = t.entry_ts[:4] if t.entry_ts else "unknown"
             yslot = by_year.setdefault(year, {"n": 0, "pnl": 0.0})
             yslot["n"] = int(yslot["n"]) + 1
             yslot["pnl"] = float(yslot["pnl"]) + t.pnl_usdc
+
+        avg_lev = 0.0
+        if self.trades:
+            avg_lev = sum(t.leverage_used for t in self.trades) / len(self.trades)
 
         return {
             "symbol": self.symbol,
@@ -114,9 +150,16 @@ class BacktestResult:
             "losses": len(self.losses),
             "win_rate_pct": round(self.win_rate, 1),
             "pnl_usdc": round(self.total_pnl, 2),
-            "equity_final": round(self.initial_capital + self.total_pnl, 2),
+            "equity_final": round(self.final_equity, 2),
+            "return_pct": round(self.return_pct, 1),
+            "cagr_pct": round(self.cagr_pct, 1),
             "profit_factor": round(self.profit_factor, 2),
             "max_dd_usdc": round(self.max_drawdown_usdc, 2),
+            "max_dd_pct": round(self.max_drawdown_pct, 1),
+            "sizing": self.sizing,
+            "risk_pct": self.risk_pct,
+            "max_leverage": self.max_leverage,
+            "avg_leverage": round(avg_lev, 2),
             "by_kind": {
                 k: {
                     "n": v["n"],
@@ -152,9 +195,14 @@ def simulate_trades(
     max_bars_hold: int = 96,  # 96 * 5m = 8h
     partial_frac: float = 0.5,
     version: str = "v1",
+    initial_capital: float = 1000.0,
+    sizing: str = "fixed",  # fixed | risk
+    risk_pct: float = 1.0,  # % do equity arriscado no stop (sizing=risk)
+    max_leverage: float = 5.0,
 ) -> list[Trade]:
     trades: list[Trade] = []
     occupied_until = -1
+    equity = initial_capital
 
     highs = df_5m["high"].to_numpy(dtype=float)
     lows = df_5m["low"].to_numpy(dtype=float)
@@ -163,8 +211,6 @@ def simulate_trades(
     # Perfis de saída por versão
     max_stop_pct_filter: float | None = None
     if version == "v2-short":
-        # Melhoria PnL: winners vivem no timeout → hold 24h; BE só após 2.5R;
-        # descarta stops >1% (ruído / setups ruins).
         max_bars_hold = max(max_bars_hold, 288)
         min_be_profit_pct = fee_pct * 2.5
         short_be_r = 2.5
@@ -181,6 +227,8 @@ def simulate_trades(
         i = sig.bar_idx
         if i <= occupied_until or i >= len(df_5m) - 2:
             continue
+        if equity <= initial_capital * 0.05:
+            break
 
         entry = sig.entry
         stop = sig.stop
@@ -191,6 +239,7 @@ def simulate_trades(
         partial_taken = False
         realized = 0.0
         size = 1.0
+        stop_price = stop
 
         risk = (entry - stop) if side == Side.LONG else (stop - entry)
         if risk <= 0:
@@ -202,11 +251,26 @@ def simulate_trades(
         if version == "v2-short" and stop_pct < 0.05:
             continue
 
-        # Garante R:R mínimo no alvo
         if side == Side.SHORT and (entry - target) / risk < 2.0:
             target = entry - risk * 2.0
         if side == Side.LONG and (target - entry) / risk < 2.0:
             target = entry + risk * 2.0
+
+        # --- Sizing ---
+        equity_before = equity
+        if sizing == "risk":
+            # notional tal que perda no stop ≈ risk_pct% do equity
+            notional = (equity * (risk_pct / 100.0)) / (stop_pct / 100.0)
+            lev = notional / equity if equity > 0 else 0.0
+            if lev > max_leverage:
+                notional = equity * max_leverage
+                lev = max_leverage
+        else:
+            notional = position_usdc
+            lev = notional / equity if equity > 0 else 0.0
+
+        if notional <= 0:
+            continue
 
         exit_px = None
         exit_idx = i
@@ -286,8 +350,12 @@ def simulate_trades(
             rest_pnl = (entry - exit_px) / entry
 
         gross_pct = (realized + rest_pnl * size) * 100.0
-        fee = position_usdc * (fee_pct / 100.0) * (1.5 if partial_taken else 1.0)
-        pnl_usdc = position_usdc * (gross_pct / 100.0) - fee
+        fee = notional * (fee_pct / 100.0) * (1.5 if partial_taken else 1.0)
+        pnl_usdc = notional * (gross_pct / 100.0) - fee
+        # Limita perda ao risco no stop (isolado)
+        max_loss = notional * (stop_pct / 100.0)
+        pnl_usdc = max(pnl_usdc, -max_loss)
+        equity += pnl_usdc
 
         if abs(pnl_usdc) < 0.05 and result in ("loss", "gain", "timeout"):
             result = "flat"
@@ -307,6 +375,10 @@ def simulate_trades(
                 be_moved=be_moved,
                 partial_taken=partial_taken,
                 entry_ts=str(sig.ts),
+                stop=float(stop_price),
+                notional=round(notional, 2),
+                leverage_used=round(lev, 2),
+                equity_before=round(equity_before, 2),
             )
         )
         occupied_until = exit_idx
@@ -325,11 +397,29 @@ def run_backtest(
     initial_capital: float = 1000.0,
     position_usdc: float = 100.0,
     version: str = "v1",
+    sizing: str = "fixed",
+    risk_pct: float = 1.0,
+    max_leverage: float = 5.0,
     **signal_kwargs: Any,
 ) -> BacktestResult:
+    # Default realista para v2-short: sizing por risco (senão retorno absoluto fica irrelevante)
+    if version == "v2-short" and sizing == "fixed" and "sizing" not in signal_kwargs:
+        # Mantém fixed se caller passou explicitamente position-only compare;
+        # CLI decide. Aqui respeita o parâmetro sizing.
+        pass
+
     signal_kwargs = {**signal_kwargs, "version": version}
     signals = generate_signals(df_5m, df_30m, df_1h, df_1d, df_1w, **signal_kwargs)
-    trades = simulate_trades(df_5m, signals, position_usdc=position_usdc, version=version)
+    trades = simulate_trades(
+        df_5m,
+        signals,
+        position_usdc=position_usdc,
+        version=version,
+        initial_capital=initial_capital,
+        sizing=sizing,
+        risk_pct=risk_pct,
+        max_leverage=max_leverage,
+    )
     result = BacktestResult(
         symbol=symbol,
         interval_confirm="5m",
@@ -339,7 +429,9 @@ def run_backtest(
         trades=trades,
         initial_capital=initial_capital,
         position_usdc=position_usdc,
+        sizing=sizing,
+        risk_pct=risk_pct if sizing == "risk" else 0.0,
+        max_leverage=max_leverage if sizing == "risk" else 1.0,
     )
-    # anexa versão no summary via monkey patch leve
     result._version = version  # type: ignore[attr-defined]
     return result

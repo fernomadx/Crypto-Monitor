@@ -46,25 +46,28 @@ Posição $100 / capital $1000.
 - `impulse_short`: 153 trades, **+$13.92**, WR 25%
 - `failure_long` restante: 88 trades, **−$20.64**, WR 2.1% ← ainda sangra
 
-### Ablation `v2-short` (só impulsão short) — gestão de saída otimizada
-| Métrica | Antes | **Agora** |
-|---------|-------|-----------|
-| Trades | 153 | 148 |
-| Win rate | 25.0% | 21.4% |
-| PnL | +$13.92 | **+$35.80** |
-| PF | 2.18 | **2.87** |
-| Max DD | $6.15 | **$3.70** |
-| Veredito | PROMISING | **PROMISING** |
+### Ablation `v2-short` — sizing por risco (retorno absoluto)
 
-Mudanças de saída (diagnóstico: 100% dos ganhos eram timeout; BE cedo gerava 85 flats de taxa):
-1. Hold **24h** (288×M5) em vez de 12h
-2. BE só após **2.5R** (antes 1.2R)
-3. Descarta setups com stop **>1%** do preço
+O +$35 com posição fixa $100 era **subutilização de capital** (~10% do equity, ~2% do tempo no mercado).
+Com sizing realista de futures (arrisca % do equity no stop, compound, alavancagem limitada):
 
-PnL positivo em **todos** os anos 2022–2026.
+| | Fixo $100 | **Risk 1.5% / max 5x** |
+|--|-----------|------------------------|
+| Equity | $1 036 | **$3 499** |
+| Retorno 5y | +3.6% | **+249.9%** |
+| CAGR | ~0.7% | **+28.5%** |
+| PF | 2.87 | 2.46 |
+| Max DD | 0.4% | 27.8% |
+| Avg lev | — | 4.7x |
+
+PnL positivo em todos os anos 2022–2026 também no modo risk.
 
 ```bash
+# Retorno absoluto (recomendado)
+python vps/candle_dynamics_backtest.py --years 5 --version v2-short --sizing risk --risk-pct 1.5 --max-leverage 5
+
+# Comparar setups com notional fixo
+python vps/candle_dynamics_backtest.py --years 5 --version v2-short --sizing fixed --position 100
 python vps/candle_dynamics_backtest.py --years 5 --compare
-python vps/candle_dynamics_backtest.py --years 5 --version v2-short
 ```
 
