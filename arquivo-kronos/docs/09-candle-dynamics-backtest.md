@@ -46,17 +46,22 @@ Posição $100 / capital $1000.
 - `impulse_short`: 153 trades, **+$13.92**, WR 25%
 - `failure_long` restante: 88 trades, **−$20.64**, WR 2.1% ← ainda sangra
 
-### Ablation `v2-short` (só impulsão short)
-| Métrica | Valor |
-|---------|-------|
-| Trades | 153 |
-| Win rate | 25.0% |
-| PnL | **+$13.92** |
-| PF | **2.18** |
-| Max DD | $6.15 |
-| Veredito | **PROMISING** |
+### Ablation `v2-short` (só impulsão short) — gestão de saída otimizada
+| Métrica | Antes | **Agora** |
+|---------|-------|-----------|
+| Trades | 153 | 148 |
+| Win rate | 25.0% | 21.4% |
+| PnL | +$13.92 | **+$35.80** |
+| PF | 2.18 | **2.87** |
+| Max DD | $6.15 | **$3.70** |
+| Veredito | PROMISING | **PROMISING** |
 
-PnL positivo na maioria dos anos; o long residual do v2 era o que ainda invalidava o pacote.
+Mudanças de saída (diagnóstico: 100% dos ganhos eram timeout; BE cedo gerava 85 flats de taxa):
+1. Hold **24h** (288×M5) em vez de 12h
+2. BE só após **2.5R** (antes 1.2R)
+3. Descarta setups com stop **>1%** do preço
+
+PnL positivo em **todos** os anos 2022–2026.
 
 ```bash
 python vps/candle_dynamics_backtest.py --years 5 --compare
