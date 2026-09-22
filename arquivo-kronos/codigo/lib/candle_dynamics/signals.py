@@ -225,6 +225,9 @@ def generate_signals(
     m_ns = _ts_ns(df_30m["timestamps"])
 
     h_close = df_1h["close"].to_numpy(dtype=float)
+    # Duração H1 em ns — close da barra corrente no resample full-history é FUTURO
+    # enquanto a hora não fechou (look-ahead). Bias HTF só com H1 já fechado.
+    H1_NS = np.int64(3_600_000_000_000)
 
     signals: list[Signal] = []
     cooldown_until = -1
@@ -277,8 +280,12 @@ def generate_signals(
         bull_fail = is_bullish_failure(h, l, c, i)
         bear_fail = is_bearish_failure(h, l, c, i)
 
-        htf_bull = float(h_close[hi]) > float(h_mid[hi])
-        htf_bear = float(h_close[hi]) < float(h_mid[hi])
+        # Viés H1: nunca usar close da hora ainda aberta (look-ahead no resample)
+        hi_closed = hi if t_ns >= int(h_ns[hi]) + H1_NS else hi - 1
+        if hi_closed < 0 or np.isnan(h_mid[hi_closed]):
+            continue
+        htf_bull = float(h_close[hi_closed]) > float(h_mid[hi_closed])
+        htf_bear = float(h_close[hi_closed]) < float(h_mid[hi_closed])
 
         day_gap_down = bool(gap_down[di]) if di < len(gap_down) else False
         # Impulso de alta no M30 (hierarquia) — candle M30 já fechado = mi
