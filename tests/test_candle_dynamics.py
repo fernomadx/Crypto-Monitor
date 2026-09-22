@@ -124,7 +124,6 @@ def test_generate_signals_and_backtest_smoke():
     df_1h = resample_ohlcv(df_5m, "1h")
     df_1d = resample_ohlcv(df_5m, "1D")
     df_1w = resample_ohlcv(df_5m, "1W")
-    # Garante swing levels não-NaN ampliando extremos
     df_1d.loc[df_1d.index[5], "low"] = df_1d["low"].min() * 0.98
     df_1d.loc[df_1d.index[5], "high"] = df_1d["high"].max() * 1.02
     sigs = generate_signals(df_5m, df_30m, df_1h, df_1d, df_1w, zone_tol_pct=5.0)
@@ -132,3 +131,17 @@ def test_generate_signals_and_backtest_smoke():
     result = run_backtest(df_5m, df_30m, df_1h, df_1d, df_1w, zone_tol_pct=5.0)
     assert result.bars == len(df_5m)
     assert "trades" in result.summary()
+
+
+def test_v2_runs_and_is_stricter_than_v1():
+    df_5m = _synth_ohlcv(3000, seed=11)
+    df_30m = resample_ohlcv(df_5m, "30min")
+    df_1h = resample_ohlcv(df_5m, "1h")
+    df_1d = resample_ohlcv(df_5m, "1D")
+    df_1w = resample_ohlcv(df_5m, "1W")
+    s1 = generate_signals(df_5m, df_30m, df_1h, df_1d, df_1w, version="v1", zone_tol_pct=8.0)
+    s2 = generate_signals(df_5m, df_30m, df_1h, df_1d, df_1w, version="v2", zone_tol_pct=8.0)
+    # v2 deve gerar no máximo tantos sinais quanto v1 (mais restritivo)
+    assert len(s2) <= len(s1)
+    r2 = run_backtest(df_5m, df_30m, df_1h, df_1d, df_1w, version="v2", zone_tol_pct=8.0)
+    assert r2.summary()["version"] == "v2"

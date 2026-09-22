@@ -3,9 +3,10 @@
 Backtest Candle Dynamics — BTC últimos N anos.
 
 Uso:
-  python vps/candle_dynamics_backtest.py
-  python vps/candle_dynamics_backtest.py --years 5 --symbol BTCUSDT
-  python vps/candle_dynamics_backtest.py --years 1  # reusa cache Vision em data/
+  python vps/candle_dynamics_backtest.py --years 5
+  python vps/candle_dynamics_backtest.py --years 5 --version v2
+  python vps/candle_dynamics_backtest.py --years 5 --version v2-short
+  python vps/candle_dynamics_backtest.py --years 5 --compare
 
 Dados: Binance Vision (mensal). Cache em data/candle_dynamics/.
 """
@@ -28,11 +29,12 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger("candle_dynamics")
 
 
-def print_report(result) -> None:
+def print_report(result, label: str | None = None) -> None:
     s = result.summary()
+    tag = label or s.get("version", "?")
     print()
     print("=" * 64)
-    print(f"Candle Dynamics Backtest — {s['symbol']}")
+    print(f"Candle Dynamics [{tag}] — {s['symbol']}")
     print(f"Período: {s['period']} | Barras M5: {s['bars']:,}")
     print(f"Capital sim: ${result.initial_capital:.0f} | Posição: ${result.position_usdc:.0f}")
     print("=" * 64)
@@ -49,12 +51,40 @@ def print_report(result) -> None:
     print(f"Por tipo: {s['by_kind']}")
     print(f"Por ano: {s.get('by_year', {})}")
     print()
-    print("Últimos 12 trades:")
-    for t in result.trades[-12:]:
+    print("Últimos 8 trades:")
+    for t in result.trades[-8:]:
         print(
             f"  {t.side:5} {t.kind:18} PnL=${t.pnl_usdc:+7.2f} "
-            f"{t.result:7} BE={int(t.be_moved)} partial={int(t.partial_taken)} | {t.reason[:48]}"
+            f"{t.result:7} BE={int(t.be_moved)} | {t.reason[:52]}"
         )
+
+
+def print_compare(results: dict) -> None:
+    labels = list(results.keys())
+    summaries = {k: results[k].summary() for k in labels}
+    print()
+    print("=" * 72)
+    print("COMPARAÇÃO " + " vs ".join(labels))
+    print("=" * 72)
+    header = f"{'Métrica':<14}" + "".join(f"{k:>14}" for k in labels)
+    print(header)
+    metrics = [
+        ("Trades", "trades"),
+        ("Win rate %", "win_rate_pct"),
+        ("PnL $", "pnl_usdc"),
+        ("Equity $", "equity_final"),
+        ("PF", "profit_factor"),
+        ("Max DD $", "max_dd_usdc"),
+        ("Veredito", "verdict"),
+    ]
+    for name, key in metrics:
+        row = f"{name:<14}"
+        for lab in labels:
+            row += f"{str(summaries[lab][key]):>14}"
+        print(row)
+    for lab in labels:
+        print(f"\n{lab} by_kind: {summaries[lab].get('by_kind')}")
+        print(f"{lab} by_year: {summaries[lab].get('by_year')}")
 
 
 def main() -> int:
@@ -63,13 +93,29 @@ def main() -> int:
     p.add_argument("--years", type=float, default=5.0)
     p.add_argument("--position", type=float, default=100.0)
     p.add_argument("--capital", type=float, default=1000.0)
+    p.add_argument(
+        "--version",
+        choices=("v1", "v2", "v2-short"),
+        default="v1",
+        help="v1=baseline; v2=filtros; v2-short=só impulsão short",
+    )
+    p.add_argument(
+        "--compare",
+        action="store_true",
+        help="Roda v1, v2 e v2-short lado a lado",
+    )
     p.add_argument("--json-out", type=Path, default=None)
     p.add_argument("--cache-dir", type=Path, default=None)
     args = p.parse_args()
 
     logger.info("Carregando %s M5 (%.1f anos)…", args.symbol, args.years)
     df_5m = load_klines(args.symbol, "5m", years=args.years, cache_dir=args.cache_dir)
-    logger.info("M5: %d barras (%s → %s)", len(df_5m), df_5m["timestamps"].iloc[0], df_5m["timestamps"].iloc[-1])
+    logger.info(
+        "M5: %d barras (%s → %s)",
+        len(df_5m),
+        df_5m["timestamps"].iloc[0],
+        df_5m["timestamps"].iloc[-1],
+    )
 
     df_30m = resample_ohlcv(df_5m, "30min")
     df_1h = resample_ohlcv(df_5m, "1h")
@@ -83,16 +129,32 @@ def main() -> int:
         len(df_1w),
     )
 
-    result = run_backtest(
-        df_5m,
-        df_30m,
-        df_1h,
-        df_1d,
-        df_1w,
+    common = dict(
+        df_5m=df_5m,
+        df_30m=df_30m,
+        df_1h=df_1h,
+        df_1d=df_1d,
+        df_1w=df_1w,
         symbol=args.symbol,
         initial_capital=args.capital,
         position_usdc=args.position,
     )
+
+    if args.compare:
+        results = {}
+        for ver in ("v1", "v2", "v2-short"):
+            logger.info("Rodando %s…", ver)
+            results[ver] = run_backtest(**common, version=ver)
+            print_report(results[ver], ver)
+        print_compare(results)
+        if args.json_out:
+            args.json_out.parent.mkdir(parents=True, exist_ok=True)
+            payload = {k: v.summary() for k, v in results.items()}
+            args.json_out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            logger.info("JSON salvo em %s", args.json_out)
+        return 0
+
+    result = run_backtest(**common, version=args.version)
     print_report(result)
 
     if args.json_out:

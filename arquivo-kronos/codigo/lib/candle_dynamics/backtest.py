@@ -138,6 +138,7 @@ class BacktestResult:
                 if self.n < 30
                 else "PROMISING"
             ),
+            "version": getattr(self, "_version", "v1"),
         }
 
 
@@ -150,6 +151,7 @@ def simulate_trades(
     be_trigger_r: float = 0.6,  # move BE após 0.6R a favor
     max_bars_hold: int = 96,  # 96 * 5m = 8h
     partial_frac: float = 0.5,
+    version: str = "v1",
 ) -> list[Trade]:
     trades: list[Trade] = []
     occupied_until = -1
@@ -158,12 +160,18 @@ def simulate_trades(
     lows = df_5m["low"].to_numpy(dtype=float)
     closes = df_5m["close"].to_numpy(dtype=float)
 
+    # v2 / v2-short: hold mais longo; BE fee-aware
+    if version in ("v2", "v2-short"):
+        max_bars_hold = max(max_bars_hold, 144)  # 12h
+        min_be_profit_pct = fee_pct * 2.5
+    else:
+        min_be_profit_pct = 0.0
+
     for sig in signals:
         i = sig.bar_idx
         if i <= occupied_until or i >= len(df_5m) - 2:
             continue
 
-        # Entrada no close do candle de confirmação (já fechado)
         entry = sig.entry
         stop = sig.stop
         target = sig.target
@@ -172,7 +180,7 @@ def simulate_trades(
         be_moved = False
         partial_taken = False
         realized = 0.0
-        size = 1.0  # fração restante
+        size = 1.0
 
         risk = (entry - stop) if side == Side.LONG else (stop - entry)
         if risk <= 0:
@@ -186,17 +194,32 @@ def simulate_trades(
         for j in range(i + 1, end_j + 1):
             hi, lo = float(highs[j]), float(lows[j])
 
-            # BE rápido só em retração / zonas D/W (regra 5.1); trend-follow espera 1R
-            be_r = be_trigger_r if sig.is_counter_trend or "zona_compra" in sig.reason else max(be_trigger_r, 1.0)
-            if not be_moved:
-                if side == Side.LONG and hi >= entry + be_r * risk:
-                    stop = entry
-                    be_moved = True
-                elif side == Side.SHORT and lo <= entry - be_r * risk:
-                    stop = entry
-                    be_moved = True
+            # BE: v1 rápido em retração; v2 seletivo + fee-aware
+            if version in ("v2", "v2-short"):
+                if sig.is_counter_trend:
+                    be_r = max(be_trigger_r, 0.8)
+                else:
+                    be_r = max(be_trigger_r, 1.2)
+            else:
+                be_r = (
+                    be_trigger_r
+                    if sig.is_counter_trend or "zona_compra" in sig.reason
+                    else max(be_trigger_r, 1.0)
+                )
 
-            # Parcial em 50% (retração contra tendência)
+            if not be_moved:
+                moved = False
+                if side == Side.LONG and hi >= entry + be_r * risk:
+                    moved = True
+                elif side == Side.SHORT and lo <= entry - be_r * risk:
+                    moved = True
+                if moved:
+                    # Só BE se o movimento a favor já cobrir taxa (evita flat-$0.04)
+                    favor_pct = be_r * risk / entry * 100.0
+                    if favor_pct >= min_be_profit_pct:
+                        stop = entry
+                        be_moved = True
+
             if (
                 partial is not None
                 and not partial_taken
@@ -214,17 +237,20 @@ def simulate_trades(
                     size -= partial_frac
                     partial_taken = True
 
-            # Stop / Target na fração restante
             if side == Side.LONG:
                 if lo <= stop:
-                    exit_px, exit_idx, result = stop, j, ("flat" if be_moved and abs(stop - entry) < 1e-9 else "loss")
+                    exit_px, exit_idx, result = stop, j, (
+                        "flat" if be_moved and abs(stop - entry) < 1e-9 else "loss"
+                    )
                     break
                 if hi >= target:
                     exit_px, exit_idx, result = target, j, "gain"
                     break
             else:
                 if hi >= stop:
-                    exit_px, exit_idx, result = stop, j, ("flat" if be_moved and abs(stop - entry) < 1e-9 else "loss")
+                    exit_px, exit_idx, result = stop, j, (
+                        "flat" if be_moved and abs(stop - entry) < 1e-9 else "loss"
+                    )
                     break
                 if lo <= target:
                     exit_px, exit_idx, result = target, j, "gain"
@@ -279,11 +305,13 @@ def run_backtest(
     symbol: str = "BTCUSDT",
     initial_capital: float = 1000.0,
     position_usdc: float = 100.0,
+    version: str = "v1",
     **signal_kwargs: Any,
 ) -> BacktestResult:
+    signal_kwargs = {**signal_kwargs, "version": version}
     signals = generate_signals(df_5m, df_30m, df_1h, df_1d, df_1w, **signal_kwargs)
-    trades = simulate_trades(df_5m, signals, position_usdc=position_usdc)
-    return BacktestResult(
+    trades = simulate_trades(df_5m, signals, position_usdc=position_usdc, version=version)
+    result = BacktestResult(
         symbol=symbol,
         interval_confirm="5m",
         start=pd.Timestamp(df_5m["timestamps"].iloc[0]),
@@ -293,3 +321,6 @@ def run_backtest(
         initial_capital=initial_capital,
         position_usdc=position_usdc,
     )
+    # anexa versão no summary via monkey patch leve
+    result._version = version  # type: ignore[attr-defined]
+    return result
