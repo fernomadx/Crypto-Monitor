@@ -28,6 +28,10 @@ copy lib/quant_research.py
 copy lib/quant_impact.py
 copy lib/kronos_quant.py
 copy lib/smc_strategy.py
+copy lib/candle_dynamics/__init__.py
+copy lib/candle_dynamics/data.py
+copy lib/candle_dynamics/signals.py
+copy lib/candle_dynamics/backtest.py
 copy lib/mexc_klines.py
 copy lib/mexc_http.py
 copy lib/mexc_contract.py
@@ -57,6 +61,7 @@ copy vps/kronos_daily_report.py
 copy vps/kronos_status.py
 copy vps/kronos_reset_catalog.py
 copy vps/smc_backtest.py
+copy vps/candle_dynamics_backtest.py
 copy vps/railway_boot.sh
 copy vps/install.sh
 copy vps/setup_btccursor.sh
