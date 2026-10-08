@@ -36,6 +36,7 @@ arquivo-kronos/
 | `06-comandos-uteis.md` | Comandos Shell / testes |
 | `07-decisoes-e-contexto.md` | Decisões e histórico do projeto |
 | `08-export-memorias.md` | Preferências e contexto exportado |
+| `09-candle-dynamics-backtest.md` | Bot + backtest dinâmica de candles BTC 5y |
 
 ---
 

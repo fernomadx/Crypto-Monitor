@@ -22,3 +22,4 @@ paramiko>=3.4.0
 # COMBO5 / Trade Desk (OHLCV indicators)
 pandas>=2.0.0
 numpy>=1.26.0
+pyarrow>=14.0.0
