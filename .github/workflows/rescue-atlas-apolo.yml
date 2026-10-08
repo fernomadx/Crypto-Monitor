@@ -1,0 +1,43 @@
+name: Rescue ATLAS APOLO 77
+
+on:
+  workflow_dispatch:
+    inputs:
+      vps_host:
+        description: "Hetzner IPv4 (default Kronos/ATLAS 77)"
+        required: false
+        default: "77.42.126.222"
+        type: string
+
+jobs:
+  rescue:
+    runs-on: ubuntu-latest
+    environment: "faithful-determination / production"
+    steps:
+      - name: Run console-rescue-77 via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ github.event.inputs.vps_host || '77.42.126.222' }}
+          username: ${{ secrets.VPS_USER || 'root' }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          command_timeout: 10m
+          script_stop: false
+          script: |
+            set -euo pipefail
+            echo "HOST=$(hostname) IP=$(hostname -I | awk '{print $1}')"
+            curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/870fb3f0a612176c9c3f61cff5ad3ea832e925cc/scripts/console-rescue-77.sh | bash
+            echo "===== ARTIFACTS ====="
+            ls -la /root/rescue-* 2>/dev/null | tail -20 || true
+            LATEST=$(ls -1dt /root/rescue-* 2>/dev/null | head -1 || true)
+            if [ -n "$LATEST" ]; then
+              echo "===== console.log ====="
+              cat "$LATEST/console.log" || true
+            fi
+
+      - name: SSH failed — need Console / key on 77
+        if: failure()
+        run: |
+          echo "::error::SSH to target failed. VPS_SSH_KEY likely only authorized on 204, not 77."
+          echo "Paste on Hetzner Console root@77:"
+          echo "curl -fsSL https://raw.githubusercontent.com/fernomadx/Crypto-Monitor/870fb3f0a612176c9c3f61cff5ad3ea832e925cc/scripts/console-rescue-77.sh | bash"
