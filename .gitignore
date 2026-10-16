@@ -1,6 +1,8 @@
 # Credenciais — NUNCA versionar
 .env
 *.env
+!.env.example
+!atlas/.env.example
 
 # Banco de dados local
 data/
@@ -13,10 +15,18 @@ __pycache__/
 *.pyo
 .venv/
 venv/
+atlas/.venv/
 vps/.venv/
 vps/charts/*.png
 vps/combo5_state/
 .python-version
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+*.egg-info/
 
 # OS
 .DS_Store
@@ -25,8 +35,12 @@ Thumbs.db
 # Logs
 *.log
 logs/
+atlas/logs/
 
 # IDE
 .vscode/
 .idea/
 *.swp
+
+# ATLAS local artifacts
+atlas/data/

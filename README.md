@@ -2,11 +2,28 @@
 
 Sistema de monitoramento e alertas crypto — 24/7 no Railway, notificações no Telegram.
 
-**Custo operacional:** ~$6-8/mês ($5 Railway + $1-3 Claude Haiku)
+## ATLAS (novo)
+
+O pacote **ATLAS** — Adaptive Trading, Learning and Analysis System — vive em `atlas/`,
+isolado do Kronos/COMBO5. Ver:
+
+- `ATLAS_PROJECT_CONTEXT.md`
+- `atlas/README.md`
+- `atlas/docs/STATUS.md`
+
+```bash
+cd atlas
+python3.12 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+cp .env.example .env
+# PostgreSQL local + migrações
+alembic -c migrations/alembic.ini upgrade head
+uvicorn app.main:app --host 0.0.0.0 --port 8080
+```
 
 ---
 
-## Arquitetura
+## Arquitetura (legado crypto-monitor / Kronos)
 
 ```
 supercronic (cron interno do container)
