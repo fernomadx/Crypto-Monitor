@@ -49,3 +49,6 @@
 # 7 * * * * python /app/vps/mexc_analise.py --telegram >> /data/mexc_analise.log 2>&1
 # Daemon alerts (BTC 1h, poll 15s) — watchdog silencioso (sem "Bot iniciado")
 */2 * * * * /app/vps/ensure_mexc_analise.sh >> /data/mexc_analise.log 2>&1
+
+# OI Capitulation: scanner day trade 47 perps (a cada 5 min, 2 min após candle)
+2-57/5 * * * * python /app/agents/oi_capitulation.py >> /data/oi_capitulation.log 2>&1
